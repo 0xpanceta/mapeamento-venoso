@@ -157,6 +157,7 @@
 
 <div class="status" id="status">
   <span id="status-texto">Carregando modelo&#8230;</span>
+  <button class="pasta-btn" id="btn-reusar" style="display:none"></button>
   <button class="pasta-btn" id="btn-pasta" style="display:none">&#128193; Escolher pasta de salvamento</button>
 </div>
 
@@ -165,6 +166,47 @@
 //  CONFIGURACAO
 // ===================================================================
 const ARQUIVO_MODELO = "Modelo.png";
+
+// ===================================================================
+//  MEMORIA DA PASTA (IndexedDB)
+//  Guarda a referencia (handle) da pasta escolhida para reusar entre
+//  sessoes. Por seguranca, o Chrome ainda pede UMA confirmacao ao
+//  reabrir o navegador — mas nao e preciso navegar ate a pasta de novo.
+// ===================================================================
+const IDB_NOME = "mapeamento-venoso";
+const IDB_STORE = "config";
+const IDB_CHAVE = "pastaSalvamento";
+
+function idbAbrir() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NOME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbSalvarPasta(handle) {
+  try {
+    const db = await idbAbrir();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(handle, IDB_CHAVE);
+      tx.oncomplete = res;
+      tx.onerror = () => rej(tx.error);
+    });
+  } catch (e) { /* sem persistencia (ex.: aba anonima): segue sem lembrar */ }
+}
+async function idbLerPasta() {
+  try {
+    const db = await idbAbrir();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const r = tx.objectStore(IDB_STORE).get(IDB_CHAVE);
+      r.onsuccess = () => res(r.result || null);
+      r.onerror = () => rej(r.error);
+    });
+  } catch (e) { return null; }
+}
 
 // ===================================================================
 //  ESTADO
@@ -190,19 +232,23 @@ const suportaFSA = "showDirectoryPicker" in window;
 //  CARREGAR O MODELO
 // ===================================================================
 function carregarModelo() {
-  const img = new Image();
-  img.onload = () => {
-    imagemModelo = img;
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    redesenhar();
-    definirStatus("Pronto. Digite o nome da paciente e comece a desenhar.", "ok");
-  };
-  img.onerror = () => {
-    definirStatus("ERRO: nao encontrei \"" + ARQUIVO_MODELO +
-      "\". Ele precisa estar na mesma pasta deste programa.", "erro");
-  };
-  img.src = ARQUIVO_MODELO;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      imagemModelo = img;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      redesenhar();
+      definirStatus("Pronto. Digite o nome da paciente e comece a desenhar.", "ok");
+      resolve(true);
+    };
+    img.onerror = () => {
+      definirStatus("ERRO: nao encontrei \"" + ARQUIVO_MODELO +
+        "\". Ele precisa estar na mesma pasta deste programa.", "erro");
+      resolve(false);
+    };
+    img.src = ARQUIVO_MODELO;
+  });
 }
 
 // ===================================================================
@@ -352,14 +398,33 @@ function horaAgora() {
 }
 function gerarPNG() { return new Promise(r => canvas.toBlob(r, "image/png")); }
 
+const pastaBtn = document.getElementById("btn-pasta");
+const reusarBtn = document.getElementById("btn-reusar");
+
+// Mostra que uma pasta esta ativa e pronta para salvar.
+function pastaAtiva(nome) {
+  pastaBtn.textContent = "📁 Trocar pasta (" + nome + ")";
+  pastaBtn.style.display = "inline-block";
+  reusarBtn.style.display = "none";
+  definirStatus("Pasta de salvamento: " + nome + ". Pronto para salvar.", "ok");
+}
+
 async function escolherPasta() {
   try {
     pastaSalvamento = await window.showDirectoryPicker({ mode: "readwrite" });
-    definirStatus("Pasta de salvamento definida. Pode salvar.", "ok");
-    document.getElementById("btn-pasta").style.display = "none";
+    await idbSalvarPasta(pastaSalvamento);   // lembra para as proximas sessoes
+    pastaAtiva(pastaSalvamento.name);
   } catch (err) { /* cancelou */ }
 }
-document.getElementById("btn-pasta").addEventListener("click", escolherPasta);
+pastaBtn.addEventListener("click", escolherPasta);
+
+// Confere (e, se solicitar=true, pede) a permissao de leitura/escrita na pasta.
+async function temPermissao(handle, solicitar) {
+  const opts = { mode: "readwrite" };
+  if ((await handle.queryPermission(opts)) === "granted") return true;
+  if (solicitar && (await handle.requestPermission(opts)) === "granted") return true;
+  return false;
+}
 
 async function subpasta(pai, nome) { return await pai.getDirectoryHandle(nome, { create: true }); }
 
@@ -376,9 +441,17 @@ async function salvar() {
   if (suportaFSA) {
     if (!pastaSalvamento) {
       definirStatus("Escolha primeiro a pasta onde salvar.", "aviso");
-      document.getElementById("btn-pasta").style.display = "inline-block";
+      pastaBtn.style.display = "inline-block";
       await escolherPasta();
       if (!pastaSalvamento) return;
+    }
+    // O clique em Salvar e um gesto valido para reautorizar a pasta lembrada.
+    if (!(await temPermissao(pastaSalvamento, true))) {
+      definirStatus("A permissao para a pasta expirou. Escolha a pasta novamente.", "aviso");
+      pastaSalvamento = null;
+      pastaBtn.textContent = "📁 Escolher pasta de salvamento";
+      pastaBtn.style.display = "inline-block";
+      return;
     }
     try {
       const pDia = await subpasta(pastaSalvamento, dataHoje());
@@ -413,12 +486,47 @@ function definirStatus(msg, tipo) {
 // ===================================================================
 //  INICIO
 // ===================================================================
-if (suportaFSA) {
-  document.getElementById("btn-pasta").style.display = "inline-block";
-} else {
-  definirStatus("Neste navegador o salvamento sera por download. Para salvar direto na pasta, use Chrome ou Edge.", "aviso");
+// Tenta reusar a pasta lembrada na sessao anterior. Se a permissao ainda
+// estiver valida, reusa em silencio; senao, oferece um botao de 1 clique.
+async function tentarReusarPasta() {
+  const handle = await idbLerPasta();
+  if (!handle) {                       // nunca escolheu uma pasta ainda
+    pastaBtn.style.display = "inline-block";
+    return;
+  }
+  if (await temPermissao(handle, false)) {
+    pastaSalvamento = handle;          // permissao intacta: reusa direto
+    pastaAtiva(handle.name);
+    return;
+  }
+  // Precisa de 1 confirmacao (regra de seguranca do Chrome ao reabrir).
+  reusarBtn.textContent = "📁 Usar pasta \"" + handle.name + "\"";
+  reusarBtn.style.display = "inline-block";
+  pastaBtn.textContent = "Escolher outra pasta";
+  pastaBtn.style.display = "inline-block";
+  definirStatus("Clique em \"Usar pasta\" para reusar \"" + handle.name +
+    "\" (basta 1 confirmacao).", "aviso");
+  reusarBtn.onclick = async () => {
+    if (await temPermissao(handle, true)) {
+      pastaSalvamento = handle;
+      await idbSalvarPasta(handle);
+      pastaAtiva(handle.name);
+    } else {
+      definirStatus("Permissao negada. Escolha uma pasta para salvar.", "erro");
+    }
+  };
 }
-carregarModelo();
+
+async function iniciar() {
+  const modeloOk = await carregarModelo();
+  if (!modeloOk) return;               // erro do modelo ja foi exibido
+  if (suportaFSA) {
+    await tentarReusarPasta();
+  } else {
+    definirStatus("Neste navegador o salvamento sera por download. Para salvar direto na pasta, use Chrome ou Edge.", "aviso");
+  }
+}
+iniciar();
 </script>
 </body>
 </html>
