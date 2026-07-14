@@ -41,12 +41,39 @@ O programa antigo funcionava, mas tinha vários incômodos que esta versão reso
 
 ---
 
+## Instalar como aplicativo (recomendado)
+
+O programa está publicado em:
+
+> **https://mmii.juliotarraf.com.br**
+
+Abrir por esse endereço (HTTPS) é a forma mais confiável: o salvamento
+automático na pasta funciona com certeza, e o Chrome/Edge permite **instalar**
+a página como um aplicativo com atalho na área de trabalho.
+
+Como instalar (uma vez por computador):
+
+1. Abra **https://mmii.juliotarraf.com.br** no **Chrome** ou **Edge**.
+2. Na barra de endereço, clique no ícone de **instalar** (um monitor com uma
+   seta para baixo), ou vá em **⋮ → Instalar Mapeamento Venoso…**.
+3. Confirme. Passa a existir um ícone na área de trabalho / menu Iniciar que
+   abre o programa numa janela própria, como um aplicativo.
+
+Depois de aberto uma vez com internet, o aplicativo também **funciona offline**
+(fica guardado no navegador). Quando houver internet, ele sozinho pega a versão
+mais nova.
+
+---
+
 ## Estrutura do projeto
 
 ```text
 mapeamento-venoso/
   index.html              <- o programa (é só abrir este arquivo)
   Modelo.png              <- imagem-base, limpa, sem marcações
+  manifest.webmanifest    <- permite instalar como aplicativo (PWA)
+  sw.js                   <- faz o programa funcionar offline
+  icon.svg                <- ícone do aplicativo
   README.md               <- este arquivo
   .gitignore              <- impede que imagens de pacientes vão para o GitHub
 ```
@@ -130,8 +157,13 @@ O restante do código está comentado em português, separado por seções
 
 - [x] Versão web funcional com editor próprio, cores da legenda, perfurantes,
       salvamento automático e impressão.
-- [ ] **Testar `file://`**: confirmar, numa máquina da clínica, que abrir por
-      dois cliques permite o salvamento automático na pasta. (Se não funcionar,
-      será necessário servir o arquivo por um servidor local simples.)
-- [ ] Lembrar a pasta de salvamento entre sessões, para reduzir cliques.
-- [ ] Empacotar/distribuir (atalho na área de trabalho apontando para o HTML).
+- [x] Lembrar a pasta de salvamento entre sessões, para reduzir cliques
+      (guardada no navegador via IndexedDB; pede só 1 confirmação ao reabrir).
+- [x] Empacotar/distribuir: o programa agora é **instalável como aplicativo**
+      (PWA) pela versão hospedada, criando o atalho na área de trabalho e
+      funcionando **offline** depois da primeira abertura. Veja
+      [Instalar como aplicativo](#instalar-como-aplicativo-recomendado).
+- [ ] **Testar `file://`** (opcional): confirmar, numa máquina da clínica, se
+      abrir o `index.html` por dois cliques também permite o salvamento na
+      pasta. Deixou de ser bloqueante — a forma recomendada agora é instalar
+      pelo endereço hospedado (HTTPS), onde o salvamento na pasta é garantido.

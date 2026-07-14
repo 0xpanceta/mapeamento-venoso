@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mapeamento Venoso MMII — Ultramed</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="theme-color" content="#2e7d4f">
 <style>
   :root {
     --verde: #2e7d4f; --verde-escuro: #1f5637;
@@ -61,7 +65,7 @@
   .acao-secundaria { background: #eef1ef; color: var(--texto); }
   .acao-secundaria:hover { background: #e0e6e2; }
   .canvas-area {
-    flex: 1; display: flex; align-items: center; justify-content: center;
+    flex: 1; display: flex; align-items: safe center; justify-content: safe center;
     padding: 16px; overflow: auto; background: #e9ecea;
   }
   canvas {
@@ -141,6 +145,13 @@
       <div class="espessura-valor"><span id="espessura-num">3</span> px</div>
     </div>
 
+    <div class="controle-espessura">
+      <div class="grupo-titulo">Zoom</div>
+      <input type="range" id="zoom" min="100" max="500" value="100" step="10">
+      <div class="espessura-valor"><span id="zoom-num">100</span>%</div>
+      <button class="acao-btn acao-secundaria" id="btn-ajustar" style="margin-bottom:0">&#9635; Ajustar à tela</button>
+    </div>
+
     <div>
       <div class="grupo-titulo">Ações</div>
       <button class="acao-btn acao-secundaria" id="btn-desfazer">&#8630; Desfazer (Ctrl+Z)</button>
@@ -213,6 +224,7 @@ async function idbLerPasta() {
 // ===================================================================
 const canvas = document.getElementById("tela");
 const ctx = canvas.getContext("2d");
+const canvasArea = document.querySelector(".canvas-area");
 const statusTexto = document.getElementById("status-texto");
 const statusBar = document.getElementById("status");
 
@@ -239,6 +251,7 @@ function carregarModelo() {
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       redesenhar();
+      aplicarZoom();
       definirStatus("Pronto. Digite o nome da paciente e comece a desenhar.", "ok");
       resolve(true);
     };
@@ -358,6 +371,67 @@ sliderEsp.addEventListener("input", (e) => {
   espessuraAtual = parseInt(e.target.value, 10);
   document.getElementById("espessura-num").textContent = espessuraAtual;
 });
+
+// ===================================================================
+//  ZOOM
+//  100% = imagem ajustada à tela. Acima disso, a imagem cresce e a
+//  área de desenho ganha barras de rolagem para ver os detalhes.
+//  Como posicao() usa o tamanho exibido (getBoundingClientRect), o
+//  desenho continua no lugar certo em qualquer zoom.
+// ===================================================================
+let zoomAtual = 1;
+const sliderZoom = document.getElementById("zoom");
+const zoomNum = document.getElementById("zoom-num");
+
+// Largura, em pixels de tela, que faz a imagem caber (ajuste = 100%).
+function larguraAjuste() {
+  const cs = getComputedStyle(canvasArea);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const dispW = canvasArea.clientWidth - padX;
+  const dispH = canvasArea.clientHeight - padY;
+  const proporcao = canvas.width / canvas.height;
+  let w = dispH * proporcao;      // limita pela altura
+  if (w > dispW) w = dispW;       // e também pela largura
+  return Math.max(50, w);
+}
+
+function aplicarZoom() {
+  if (!imagemModelo) return;
+  const w = larguraAjuste() * zoomAtual;
+  canvas.style.maxHeight = "none";
+  canvas.style.maxWidth = "none";
+  canvas.style.width = w + "px";
+  canvas.style.height = "auto";
+}
+
+function definirZoom(pct) {
+  pct = Math.min(500, Math.max(100, Math.round(pct)));
+  zoomAtual = pct / 100;
+  sliderZoom.value = pct;
+  zoomNum.textContent = pct;
+  aplicarZoom();
+}
+
+sliderZoom.addEventListener("input", (e) => definirZoom(parseInt(e.target.value, 10)));
+document.getElementById("btn-ajustar").addEventListener("click", () => definirZoom(100));
+
+// Ctrl + roda do mouse (ou pinça no trackpad) também aplica o zoom.
+canvasArea.addEventListener("wheel", (e) => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  definirZoom(zoomAtual * 100 + (e.deltaY < 0 ? 10 : -10));
+}, { passive: false });
+
+// Se a janela mudar de tamanho, recalcula o ajuste mantendo o zoom.
+window.addEventListener("resize", () => { if (imagemModelo) aplicarZoom(); });
+
+// Ao imprimir, remove o tamanho fixo para o CSS de impressão governar.
+window.addEventListener("beforeprint", () => {
+  canvas.style.width = ""; canvas.style.height = "";
+  canvas.style.maxWidth = ""; canvas.style.maxHeight = "";
+});
+window.addEventListener("afterprint", aplicarZoom);
 
 // ===================================================================
 //  DESFAZER / LIMPAR
@@ -527,6 +601,18 @@ async function iniciar() {
   }
 }
 iniciar();
+
+// ===================================================================
+//  INSTALACAO / OFFLINE (PWA)
+//  Registra o service worker para o programa abrir sem internet e
+//  poder ser "instalado" como atalho na area de trabalho (Chrome/Edge).
+//  So roda quando servido por http/https (nao por file://).
+// ===================================================================
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* sem offline: segue normal */ });
+  });
+}
 </script>
 </body>
 </html>
