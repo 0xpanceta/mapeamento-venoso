@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapeamento Venoso MMII — Ultramed</title>
+<style>
+  :root {
+    --verde: #2e7d4f; --verde-escuro: #1f5637;
+    --cinza-borda: #cfd8d2; --fundo: #f4f6f5; --texto: #2c3e34;
+    --azul: #1565d8; --vermelho: #d32f2f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--fundo); color: var(--texto);
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  }
+  header {
+    background: white; border-bottom: 2px solid var(--verde); padding: 10px 18px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; margin: 0; color: var(--verde-escuro); font-weight: 600; white-space: nowrap; }
+  header .subtitulo { font-size: 12px; color: #7a8a80; margin-left: -8px; }
+  .paciente-box { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .paciente-box label { font-size: 13px; color: #5a6a60; }
+  .paciente-box input {
+    padding: 7px 10px; border: 1px solid var(--cinza-borda);
+    border-radius: 6px; font-size: 14px; width: 240px;
+  }
+  .paciente-box input:focus { outline: 2px solid var(--verde); border-color: var(--verde); }
+  .corpo { flex: 1; display: flex; min-height: 0; }
+  .ferramentas {
+    width: 210px; background: white; border-right: 1px solid var(--cinza-borda);
+    padding: 14px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto;
+  }
+  .grupo-titulo {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #9aa89f; margin-bottom: 8px; font-weight: 600;
+  }
+  .ferramenta-btn {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 8px 10px; border: 1.5px solid var(--cinza-borda); border-radius: 8px;
+    background: white; cursor: pointer; font-size: 13px; text-align: left;
+    margin-bottom: 5px; transition: all 0.12s;
+  }
+  .ferramenta-btn:hover { border-color: var(--verde); }
+  .ferramenta-btn.ativo { border-color: var(--verde); background: #eef6f1; box-shadow: inset 0 0 0 1px var(--verde); }
+  .amostra-cor { width: 24px; height: 4px; border-radius: 2px; flex-shrink: 0; }
+  .amostra-x { width: 24px; text-align: center; font-weight: bold; flex-shrink: 0; font-size: 15px; }
+  .amostra-quad { width: 24px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid #ccc; }
+  .controle-espessura { display: flex; flex-direction: column; gap: 6px; }
+  .controle-espessura input { width: 100%; }
+  .espessura-valor { font-size: 12px; color: #7a8a80; text-align: right; }
+  .acao-btn {
+    width: 100%; padding: 10px; border: none; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 7px;
+  }
+  .acao-salvar { background: var(--verde); color: white; }
+  .acao-salvar:hover { background: var(--verde-escuro); }
+  .acao-secundaria { background: #eef1ef; color: var(--texto); }
+  .acao-secundaria:hover { background: #e0e6e2; }
+  .canvas-area {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 16px; overflow: auto; background: #e9ecea;
+  }
+  canvas {
+    background: white; box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+    border-radius: 4px; cursor: crosshair; max-height: 100%;
+  }
+  .status {
+    font-size: 12px; padding: 6px 18px; background: white;
+    border-top: 1px solid var(--cinza-borda); color: #7a8a80;
+    min-height: 30px; display: flex; align-items: center; gap: 8px;
+  }
+  .status.ok { color: var(--verde-escuro); }
+  .status.erro { color: #c0392b; }
+  .status.aviso { color: #b06a00; }
+  .pasta-btn {
+    font-size: 12px; padding: 4px 10px; border: 1px solid var(--cinza-borda);
+    border-radius: 6px; background: white; cursor: pointer; margin-left: auto;
+  }
+  .pasta-btn:hover { border-color: var(--verde); }
+  @media print {
+    header, .ferramentas, .status { display: none !important; }
+    body { height: auto; display: block; }
+    .corpo { display: block; }
+    .canvas-area { display: block; text-align: center; padding: 0; background: white; overflow: visible; }
+    canvas { box-shadow: none; max-width: 100%; max-height: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Mapeamento Venoso MMII</h1>
+    <div class="subtitulo">Eco-Doppler Vascular — Ultramed</div>
+  </div>
+  <div class="paciente-box">
+    <label for="paciente">Paciente:</label>
+    <input type="text" id="paciente" placeholder="Nome ou código" autocomplete="off">
+  </div>
+</header>
+
+<div class="corpo">
+  <aside class="ferramentas">
+    <div>
+      <div class="grupo-titulo">Veias</div>
+      <button class="ferramenta-btn ativo" data-tipo="linha" data-cor="#1565d8">
+        <span class="amostra-cor" style="background:#1565d8"></span> Competente
+      </button>
+      <button class="ferramenta-btn" data-tipo="linha" data-cor="#d32f2f">
+        <span class="amostra-cor" style="background:#d32f2f"></span> Incompetente
+      </button>
+      <button class="ferramenta-btn" data-tipo="linha" data-cor="#111111">
+        <span class="amostra-cor" style="background:#111111"></span> Trombosada
+      </button>
+    </div>
+
+    <div>
+      <div class="grupo-titulo">Perfurante</div>
+      <button class="ferramenta-btn" data-tipo="perfurante" data-cor="#1565d8">
+        <span class="amostra-x" style="color:#1565d8">&#8855;</span> Competente
+      </button>
+      <button class="ferramenta-btn" data-tipo="perfurante" data-cor="#d32f2f">
+        <span class="amostra-x" style="color:#d32f2f">&#8855;</span> Incompetente
+      </button>
+    </div>
+
+    <div>
+      <div class="grupo-titulo">Correção</div>
+      <button class="ferramenta-btn" data-tipo="borracha">
+        <span class="amostra-quad" style="background:#fff"></span> Borracha
+      </button>
+    </div>
+
+    <div class="controle-espessura">
+      <div class="grupo-titulo">Espessura</div>
+      <input type="range" id="espessura" min="1" max="12" value="3">
+      <div class="espessura-valor"><span id="espessura-num">3</span> px</div>
+    </div>
+
+    <div>
+      <div class="grupo-titulo">Ações</div>
+      <button class="acao-btn acao-secundaria" id="btn-desfazer">&#8630; Desfazer (Ctrl+Z)</button>
+      <button class="acao-btn acao-secundaria" id="btn-limpar">Limpar desenho</button>
+      <button class="acao-btn acao-secundaria" id="btn-imprimir">&#128424; Imprimir / PDF</button>
+      <button class="acao-btn acao-salvar" id="btn-salvar">&#128190; Salvar imagem</button>
+    </div>
+  </aside>
+
+  <div class="canvas-area">
+    <canvas id="tela" width="924" height="1316"></canvas>
+  </div>
+</div>
+
+<div class="status" id="status">
+  <span id="status-texto">Carregando modelo&#8230;</span>
+  <button class="pasta-btn" id="btn-pasta" style="display:none">&#128193; Escolher pasta de salvamento</button>
+</div>
+
+<script>
+// ===================================================================
+//  CONFIGURACAO
+// ===================================================================
+const ARQUIVO_MODELO = "Modelo.png";
+
+// ===================================================================
+//  ESTADO
+// ===================================================================
+const canvas = document.getElementById("tela");
+const ctx = canvas.getContext("2d");
+const statusTexto = document.getElementById("status-texto");
+const statusBar = document.getElementById("status");
+
+let imagemModelo = null;
+let tracos = [];
+let tracoAtual = null;
+let desenhando = false;
+
+let corAtual = "#1565d8";
+let tipoAtual = "linha";   // "linha", "perfurante" ou "borracha"
+let espessuraAtual = 3;
+
+let pastaSalvamento = null;
+const suportaFSA = "showDirectoryPicker" in window;
+
+// ===================================================================
+//  CARREGAR O MODELO
+// ===================================================================
+function carregarModelo() {
+  const img = new Image();
+  img.onload = () => {
+    imagemModelo = img;
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    redesenhar();
+    definirStatus("Pronto. Digite o nome da paciente e comece a desenhar.", "ok");
+  };
+  img.onerror = () => {
+    definirStatus("ERRO: nao encontrei \"" + ARQUIVO_MODELO +
+      "\". Ele precisa estar na mesma pasta deste programa.", "erro");
+  };
+  img.src = ARQUIVO_MODELO;
+}
+
+// ===================================================================
+//  DESENHO
+// ===================================================================
+function redesenhar() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (imagemModelo) ctx.drawImage(imagemModelo, 0, 0, canvas.width, canvas.height);
+  for (const t of tracos) desenharElemento(t);
+  if (tracoAtual) desenharElemento(tracoAtual);
+}
+
+function desenharElemento(t) {
+  if (t.tipo === "perfurante") { desenharPerfurante(t); return; }
+  desenharLinha(t);
+}
+
+function desenharLinha(t) {
+  if (t.pontos.length < 1) return;
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.lineWidth = t.espessura;
+  if (t.tipo === "borracha") {
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.strokeStyle = "rgba(0,0,0,1)";
+  } else {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = t.cor;
+  }
+  ctx.beginPath();
+  ctx.moveTo(t.pontos[0].x, t.pontos[0].y);
+  for (let i = 1; i < t.pontos.length; i++) ctx.lineTo(t.pontos[i].x, t.pontos[i].y);
+  if (t.pontos.length === 1) ctx.lineTo(t.pontos[0].x + 0.1, t.pontos[0].y + 0.1);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Perfurante = simbolo circulo-com-X na cor da veia
+function desenharPerfurante(t) {
+  const p = t.pontos[0];
+  const raio = Math.max(7, t.espessura * 2.6);
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.strokeStyle = t.cor;
+  ctx.lineWidth = Math.max(1.6, t.espessura * 0.7);
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, raio, 0, Math.PI * 2);
+  ctx.stroke();
+  const d = raio * 0.7;
+  ctx.beginPath();
+  ctx.moveTo(p.x - d, p.y - d); ctx.lineTo(p.x + d, p.y + d);
+  ctx.moveTo(p.x + d, p.y - d); ctx.lineTo(p.x - d, p.y + d);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function posicao(e) {
+  const r = canvas.getBoundingClientRect();
+  const escalaX = canvas.width / r.width;
+  const escalaY = canvas.height / r.height;
+  return { x: (e.clientX - r.left) * escalaX, y: (e.clientY - r.top) * escalaY };
+}
+
+canvas.addEventListener("pointerdown", (e) => {
+  if (!imagemModelo) return;
+  if (tipoAtual === "perfurante") {
+    tracos.push({ tipo: "perfurante", cor: corAtual, espessura: espessuraAtual, pontos: [posicao(e)] });
+    redesenhar();
+    return;
+  }
+  desenhando = true;
+  canvas.setPointerCapture(e.pointerId);
+  tracoAtual = { tipo: tipoAtual, cor: corAtual, espessura: espessuraAtual, pontos: [posicao(e)] };
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  if (!desenhando) return;
+  tracoAtual.pontos.push(posicao(e));
+  redesenhar();
+});
+
+function terminarTraco() {
+  if (!desenhando) return;
+  desenhando = false;
+  if (tracoAtual && tracoAtual.pontos.length > 0) tracos.push(tracoAtual);
+  tracoAtual = null;
+  redesenhar();
+}
+canvas.addEventListener("pointerup", terminarTraco);
+canvas.addEventListener("pointercancel", terminarTraco);
+
+// ===================================================================
+//  FERRAMENTAS
+// ===================================================================
+document.querySelectorAll(".ferramenta-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".ferramenta-btn").forEach(b => b.classList.remove("ativo"));
+    btn.classList.add("ativo");
+    tipoAtual = btn.dataset.tipo;
+    if (btn.dataset.cor) corAtual = btn.dataset.cor;
+  });
+});
+
+const sliderEsp = document.getElementById("espessura");
+sliderEsp.addEventListener("input", (e) => {
+  espessuraAtual = parseInt(e.target.value, 10);
+  document.getElementById("espessura-num").textContent = espessuraAtual;
+});
+
+// ===================================================================
+//  DESFAZER / LIMPAR
+// ===================================================================
+function desfazer() {
+  if (tracos.length === 0) return;
+  tracos.pop();
+  redesenhar();
+}
+document.getElementById("btn-desfazer").addEventListener("click", desfazer);
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); desfazer(); }
+});
+document.getElementById("btn-limpar").addEventListener("click", () => {
+  if (tracos.length === 0) return;
+  if (confirm("Apagar todo o desenho? O modelo continua.")) { tracos = []; redesenhar(); }
+});
+
+// ===================================================================
+//  IMPRIMIR / PDF
+// ===================================================================
+document.getElementById("btn-imprimir").addEventListener("click", () => { window.print(); });
+
+// ===================================================================
+//  SALVAMENTO
+// ===================================================================
+function nomeSeguro(nome) {
+  return nome.trim().replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ");
+}
+function doisDigitos(n) { return String(n).padStart(2, "0"); }
+function dataHoje() {
+  const d = new Date();
+  return d.getFullYear() + "-" + doisDigitos(d.getMonth()+1) + "-" + doisDigitos(d.getDate());
+}
+function horaAgora() {
+  const d = new Date();
+  return doisDigitos(d.getHours()) + doisDigitos(d.getMinutes()) + doisDigitos(d.getSeconds());
+}
+function gerarPNG() { return new Promise(r => canvas.toBlob(r, "image/png")); }
+
+async function escolherPasta() {
+  try {
+    pastaSalvamento = await window.showDirectoryPicker({ mode: "readwrite" });
+    definirStatus("Pasta de salvamento definida. Pode salvar.", "ok");
+    document.getElementById("btn-pasta").style.display = "none";
+  } catch (err) { /* cancelou */ }
+}
+document.getElementById("btn-pasta").addEventListener("click", escolherPasta);
+
+async function subpasta(pai, nome) { return await pai.getDirectoryHandle(nome, { create: true }); }
+
+async function salvar() {
+  const nome = document.getElementById("paciente").value;
+  if (!nome.trim()) {
+    definirStatus("Digite o nome ou codigo da paciente antes de salvar.", "erro");
+    document.getElementById("paciente").focus();
+    return;
+  }
+  const blob = await gerarPNG();
+  const nomeArq = nomeSeguro(nome) + " - " + horaAgora() + ".png";
+
+  if (suportaFSA) {
+    if (!pastaSalvamento) {
+      definirStatus("Escolha primeiro a pasta onde salvar.", "aviso");
+      document.getElementById("btn-pasta").style.display = "inline-block";
+      await escolherPasta();
+      if (!pastaSalvamento) return;
+    }
+    try {
+      const pDia = await subpasta(pastaSalvamento, dataHoje());
+      const pPac = await subpasta(pDia, nomeSeguro(nome));
+      const arq = await pPac.getFileHandle(nomeArq, { create: true });
+      const w = await arq.createWritable();
+      await w.write(blob);
+      await w.close();
+      definirStatus("OK Salvo: " + dataHoje() + " > " + nomeSeguro(nome) + " > " + nomeArq, "ok");
+      return;
+    } catch (err) {
+      definirStatus("Nao deu para salvar na pasta (" + err.message + "). Baixando como alternativa.", "aviso");
+    }
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nomeArq; a.click();
+  URL.revokeObjectURL(url);
+  definirStatus("Imagem baixada como \"" + nomeArq + "\" (pasta Downloads).", "ok");
+}
+document.getElementById("btn-salvar").addEventListener("click", salvar);
+
+// ===================================================================
+//  STATUS
+// ===================================================================
+function definirStatus(msg, tipo) {
+  statusTexto.textContent = msg;
+  statusBar.className = "status" + (tipo ? " " + tipo : "");
+}
+
+// ===================================================================
+//  INICIO
+// ===================================================================
+if (suportaFSA) {
+  document.getElementById("btn-pasta").style.display = "inline-block";
+} else {
+  definirStatus("Neste navegador o salvamento sera por download. Para salvar direto na pasta, use Chrome ou Edge.", "aviso");
+}
+carregarModelo();
+</script>
+</body>
+</html>

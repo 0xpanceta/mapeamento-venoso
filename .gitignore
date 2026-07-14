@@ -1,0 +1,20 @@
+# ============================================================
+#  IMPORTANTE: nunca versionar imagens de pacientes.
+#  Só o programa e o Modelo.png limpo devem ir para o GitHub.
+# ============================================================
+
+# Pastas de produção (imagens geradas com nome de paciente)
+Prontos/
+DesenhosLaudo/
+**/Prontos/
+
+# Qualquer PNG gerado, exceto o modelo limpo
+*.png
+!Modelo.png
+
+# Arquivos temporários e de sistema
+*.tmp
+.escrita_teste_*
+Thumbs.db
+desktop.ini
+.DS_Store
