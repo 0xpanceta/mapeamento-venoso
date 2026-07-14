@@ -45,19 +45,19 @@ O programa antigo funcionava, mas tinha vários incômodos que esta versão reso
 
 ```text
 mapeamento-venoso/
-  MapeamentoVenoso.html   <- o programa (é só abrir este arquivo)
+  index.html              <- o programa (é só abrir este arquivo)
   Modelo.png              <- imagem-base, limpa, sem marcações
   README.md               <- este arquivo
   .gitignore              <- impede que imagens de pacientes vão para o GitHub
 ```
 
-O `MapeamentoVenoso.html` e o `Modelo.png` **precisam ficar na mesma pasta**.
+O `index.html` e o `Modelo.png` **precisam ficar na mesma pasta**.
 
 ---
 
 ## Como usar no dia a dia
 
-1. Dê dois cliques em `MapeamentoVenoso.html` (abre no navegador).
+1. Dê dois cliques em `index.html` (abre no navegador).
 2. Na primeira vez, clique em **"Escolher pasta de salvamento"** (no rodapé) e
    aponte para a pasta onde as imagens devem ser guardadas.
 3. Digite o nome ou código da paciente.
@@ -103,7 +103,7 @@ Não é preciso mexer no código.
 
 ## Como mudar comportamentos (para quem edita o código)
 
-O arquivo `MapeamentoVenoso.html` tem, no início do bloco `<script>`, uma seção
+O arquivo `index.html` tem, no início do bloco `<script>`, uma seção
 de **CONFIGURAÇÃO**. O nome do arquivo-modelo fica lá:
 
 ```javascript
