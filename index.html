@@ -85,8 +85,42 @@
     border-radius: 6px; background: white; cursor: pointer; margin-left: auto;
   }
   .pasta-btn:hover { border-color: var(--verde); }
+  /* Cartao de confirmacao pos-salvamento (Tarefa 2) --------------- */
+  .cartao-salvo {
+    position: fixed; right: 16px; bottom: 44px; z-index: 40;
+    width: 300px; max-width: calc(100vw - 32px);
+    background: white; border: 1px solid var(--cinza-borda);
+    border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.22);
+    padding: 14px; animation: cartao-sobe 0.18s ease-out;
+  }
+  @keyframes cartao-sobe { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .cartao-titulo {
+    font-size: 14px; font-weight: 600; color: var(--verde-escuro);
+    margin: 0 0 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .cartao-fechar {
+    position: absolute; top: 8px; right: 10px; border: none; background: none;
+    font-size: 20px; line-height: 1; color: #9aa89f; cursor: pointer; padding: 2px 4px;
+  }
+  .cartao-fechar:hover { color: var(--texto); }
+  .cartao-thumb {
+    display: block; width: 100%; max-height: 220px; object-fit: contain;
+    background: #f4f6f5; border: 1px solid var(--cinza-borda); border-radius: 6px;
+  }
+  .cartao-caminho {
+    font-family: "Consolas", ui-monospace, monospace; font-size: 11px;
+    color: #5a6a60; background: #f4f6f5; border-radius: 6px;
+    padding: 7px 9px; margin: 10px 0 0; word-break: break-all; line-height: 1.5;
+  }
+  .cartao-acoes { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .cartao-btn {
+    flex: 1; min-width: 120px; padding: 8px 10px; border: 1.5px solid var(--cinza-borda);
+    border-radius: 8px; background: white; cursor: pointer; font-size: 13px; font-weight: 600;
+    color: var(--texto);
+  }
+  .cartao-btn:hover { border-color: var(--verde); }
   @media print {
-    header, .ferramentas, .status { display: none !important; }
+    header, .ferramentas, .status, .cartao-salvo { display: none !important; }
     body { height: auto; display: block; }
     .corpo { display: block; }
     .canvas-area { display: block; text-align: center; padding: 0; background: white; overflow: visible; }
@@ -170,6 +204,17 @@
   <span id="status-texto">Carregando modelo&#8230;</span>
   <button class="pasta-btn" id="btn-reusar" style="display:none"></button>
   <button class="pasta-btn" id="btn-pasta" style="display:none">&#128193; Escolher pasta de salvamento</button>
+</div>
+
+<!-- Cartao de confirmacao pos-salvamento (Tarefa 2). Fica escondido ate salvar. -->
+<div class="cartao-salvo" id="cartao-salvo" style="display:none">
+  <button class="cartao-fechar" id="cartao-fechar" title="Fechar" aria-label="Fechar">&times;</button>
+  <div class="cartao-titulo">&#10003; Imagem salva</div>
+  <img class="cartao-thumb" id="cartao-thumb" alt="Previa da imagem que acabou de ser salva">
+  <div class="cartao-caminho" id="cartao-caminho"></div>
+  <div class="cartao-acoes">
+    <button class="cartao-btn" id="cartao-copiar">Copiar caminho</button>
+  </div>
 </div>
 
 <script>
@@ -502,6 +547,54 @@ async function temPermissao(handle, solicitar) {
 
 async function subpasta(pai, nome) { return await pai.getDirectoryHandle(nome, { create: true }); }
 
+// ===================================================================
+//  CARTAO POS-SALVAMENTO (Tarefa 2)
+//  Logo depois de salvar, a maior dor e "salvei e nao sei onde foi".
+//  Este cartao resolve mostrando, dentro do proprio app:
+//    - uma previa do que acabou de ser salvo (feita do blob em memoria,
+//      sem reler o disco), para confirmacao visual imediata;
+//    - o caminho relativo (pasta > data > paciente > arquivo), copiavel.
+//
+//  Alternativas descartadas e por que:
+//    - Abrir o Explorer do Windows: o navegador nao permite, por seguranca.
+//    - Mostrar o caminho ABSOLUTO no disco: a File System Access API nao
+//      expoe o caminho absoluto de um handle; so da para saber o nome da
+//      pasta escolhida e o que esta abaixo dela. Por isso o caminho e relativo.
+//    - Abrir a galeria ja filtrada na paciente: mais pesado; fica na Tarefa 3.
+// ===================================================================
+const cartaoSalvo = document.getElementById("cartao-salvo");
+const cartaoThumb = document.getElementById("cartao-thumb");
+const cartaoCaminho = document.getElementById("cartao-caminho");
+let cartaoThumbURL = null;      // URL do blob exibido; revogado ao trocar/fechar
+let cartaoCaminhoTexto = "";    // caminho relativo para o botao Copiar
+
+function fecharCartaoSalvo() {
+  cartaoSalvo.style.display = "none";
+  if (cartaoThumbURL) { URL.revokeObjectURL(cartaoThumbURL); cartaoThumbURL = null; }
+}
+
+function mostrarCartaoSalvo(blob, partes) {
+  // partes = [nomePasta, data, paciente, arquivo]
+  if (cartaoThumbURL) URL.revokeObjectURL(cartaoThumbURL);
+  cartaoThumbURL = URL.createObjectURL(blob);
+  cartaoThumb.src = cartaoThumbURL;
+  cartaoCaminho.textContent = partes.join(" \\ ");     // separador estilo Windows
+  cartaoCaminhoTexto = partes.join("\\");
+  cartaoSalvo.style.display = "block";
+}
+
+document.getElementById("cartao-fechar").addEventListener("click", fecharCartaoSalvo);
+document.getElementById("cartao-copiar").addEventListener("click", async () => {
+  const btn = document.getElementById("cartao-copiar");
+  try {
+    await navigator.clipboard.writeText(cartaoCaminhoTexto);
+    btn.textContent = "Copiado!";
+  } catch (e) {
+    btn.textContent = "Nao deu para copiar";
+  }
+  setTimeout(() => { btn.textContent = "Copiar caminho"; }, 1600);
+});
+
 async function salvar() {
   const nome = document.getElementById("paciente").value;
   if (!nome.trim()) {
@@ -535,6 +628,7 @@ async function salvar() {
       await w.write(blob);
       await w.close();
       definirStatus("OK Salvo: " + dataHoje() + " > " + nomeSeguro(nome) + " > " + nomeArq, "ok");
+      mostrarCartaoSalvo(blob, [pastaSalvamento.name, dataHoje(), nomeSeguro(nome), nomeArq]);
       return;
     } catch (err) {
       definirStatus("Nao deu para salvar na pasta (" + err.message + "). Baixando como alternativa.", "aviso");
