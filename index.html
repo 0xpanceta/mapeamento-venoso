@@ -119,8 +119,64 @@
     color: var(--texto);
   }
   .cartao-btn:hover { border-color: var(--verde); }
+  /* Galeria de exames anteriores (Tarefa 3) ----------------------- */
+  .galeria {
+    position: fixed; inset: 0; z-index: 60; background: var(--fundo);
+    display: flex; flex-direction: column;
+  }
+  .galeria-topo {
+    display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+    background: white; border-bottom: 2px solid var(--verde);
+  }
+  .galeria-topo h2 { font-size: 16px; margin: 0; color: var(--verde-escuro); white-space: nowrap; }
+  .galeria-trilha { font-size: 14px; color: #5a6a60; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .galeria-trilha .elo { color: var(--azul); cursor: pointer; text-decoration: none; }
+  .galeria-trilha .elo:hover { text-decoration: underline; }
+  .galeria-trilha .sep { color: #b8c4bc; }
+  .galeria-trilha .atual { font-weight: 600; color: var(--texto); }
+  .galeria-fechar {
+    margin-left: auto; padding: 8px 16px; border: none; border-radius: 8px;
+    background: var(--verde); color: white; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .galeria-fechar:hover { background: var(--verde-escuro); }
+  .galeria-conteudo { flex: 1; overflow-y: auto; padding: 18px; }
+  .galeria-msg { color: #7a8a80; font-size: 15px; max-width: 560px; margin: 40px auto; text-align: center; line-height: 1.6; }
+  .galeria-lista { list-style: none; margin: 0 auto; padding: 0; max-width: 620px; }
+  .galeria-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    width: 100%; padding: 14px 16px; margin-bottom: 8px; text-align: left;
+    background: white; border: 1.5px solid var(--cinza-borda); border-radius: 10px;
+    cursor: pointer; font-size: 15px; color: var(--texto);
+  }
+  .galeria-item:hover { border-color: var(--verde); background: #eef6f1; }
+  .galeria-item .conta { font-size: 13px; color: #7a8a80; white-space: nowrap; }
+  .galeria-item .seta { color: #b8c4bc; }
+  .galeria-grade {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px; max-width: 1100px; margin: 0 auto;
+  }
+  .galeria-cel {
+    background: white; border: 1.5px solid var(--cinza-borda); border-radius: 10px;
+    overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
+  }
+  .galeria-cel:hover { border-color: var(--verde); }
+  .galeria-cel .moldura {
+    width: 100%; aspect-ratio: 3 / 4; background: #eef1ef;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  .galeria-cel .moldura img { width: 100%; height: 100%; object-fit: contain; }
+  .galeria-cel .moldura .carregando, .galeria-cel .moldura .quebrada { font-size: 12px; color: #9aa89f; padding: 6px; text-align: center; }
+  .galeria-cel .legenda { font-size: 12px; color: #5a6a60; padding: 8px 10px; word-break: break-word; }
+  .galeria-cel .legenda .dia { color: #9aa89f; }
+  /* Visualizador de uma imagem em tamanho grande */
+  .galeria-visu { max-width: 1000px; margin: 0 auto; text-align: center; }
+  .galeria-visu img {
+    max-width: 100%; max-height: calc(100vh - 200px); background: white;
+    border: 1px solid var(--cinza-borda); border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  }
+  .galeria-visu .legenda { margin-top: 12px; font-size: 14px; color: #5a6a60; }
   @media print {
-    header, .ferramentas, .status, .cartao-salvo { display: none !important; }
+    header, .ferramentas, .status, .cartao-salvo, .galeria { display: none !important; }
     body { height: auto; display: block; }
     .corpo { display: block; }
     .canvas-area { display: block; text-align: center; padding: 0; background: white; overflow: visible; }
@@ -193,6 +249,11 @@
       <button class="acao-btn acao-secundaria" id="btn-imprimir">&#128424; Imprimir / PDF</button>
       <button class="acao-btn acao-salvar" id="btn-salvar">&#128190; Salvar imagem</button>
     </div>
+
+    <div>
+      <div class="grupo-titulo">Arquivo</div>
+      <button class="acao-btn acao-secundaria" id="btn-galeria">&#128194; Ver exames anteriores</button>
+    </div>
   </aside>
 
   <div class="canvas-area">
@@ -214,7 +275,18 @@
   <div class="cartao-caminho" id="cartao-caminho"></div>
   <div class="cartao-acoes">
     <button class="cartao-btn" id="cartao-copiar">Copiar caminho</button>
+    <button class="cartao-btn" id="cartao-galeria">Ver exames desta paciente</button>
   </div>
+</div>
+
+<!-- Galeria de exames anteriores (Tarefa 3). Sobreposicao em tela cheia, so aparece ao pedir. -->
+<div class="galeria" id="galeria" style="display:none" role="dialog" aria-modal="true" aria-label="Exames anteriores">
+  <div class="galeria-topo">
+    <h2>&#128194; Exames anteriores</h2>
+    <nav class="galeria-trilha" id="galeria-trilha" aria-label="Navegacao"></nav>
+    <button class="galeria-fechar" id="galeria-fechar">Fechar &#10005;</button>
+  </div>
+  <div class="galeria-conteudo" id="galeria-conteudo"></div>
 </div>
 
 <script>
@@ -629,6 +701,7 @@ async function salvar() {
       await w.close();
       definirStatus("OK Salvo: " + dataHoje() + " > " + nomeSeguro(nome) + " > " + nomeArq, "ok");
       mostrarCartaoSalvo(blob, [pastaSalvamento.name, dataHoje(), nomeSeguro(nome), nomeArq]);
+      ultimoSalvo = { chaveMes: chaveMesDeData(dataHoje()), nome: nomeSeguro(nome) };
       return;
     } catch (err) {
       definirStatus("Nao deu para salvar na pasta (" + err.message + "). Baixando como alternativa.", "aviso");
@@ -642,6 +715,277 @@ async function salvar() {
   definirStatus("Imagem baixada como \"" + nomeArq + "\" (pasta Downloads).", "ok");
 }
 document.getElementById("btn-salvar").addEventListener("click", salvar);
+
+// ===================================================================
+//  GALERIA DE EXAMES ANTERIORES (Tarefa 3)
+//  Somente LEITURA. Le a arvore da pasta autorizada e navega em tres
+//  niveis: Mes -> Paciente -> Imagem. Nada sai da maquina: tudo e lido
+//  do disco local sob demanda; nenhum nome/imagem/caminho vai para
+//  servidor, API, analytics ou log. Nao ha indice persistido de
+//  pacientes — a fonte da verdade e o sistema de arquivos.
+//
+//  Agrupamento por MES na leitura: as pastas no disco sao por DIA
+//  (AAAA-MM-DD); aqui as que comecam com o mesmo AAAA-MM viram um mes so.
+//  A mesma paciente atendida em dias diferentes do mesmo mes aparece
+//  uma vez, reunindo as imagens de todos os dias. A forma de SALVAR
+//  nao muda — isso mantem a compatibilidade com os arquivos ja existentes.
+//
+//  So imagens PNG entram. PDFs ficam de fora: o "Imprimir / PDF" usa a
+//  impressao do navegador e o app nao sabe onde o PDF foi parar.
+// ===================================================================
+const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+
+// Reconhece uma pasta de data "AAAA-MM-DD" com valores plausiveis.
+// Qualquer outro nome (backup, lixo, etc.) devolve null e e ignorado.
+function analisarPastaData(nome) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(nome);
+  if (!m) return null;
+  const ano = +m[1], mes = +m[2], dia = +m[3];
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+  return { chaveMes: m[1] + "-" + m[2], rotuloMes: MESES_PT[mes-1] + " de " + ano, dataStr: nome };
+}
+function ehPNG(nome) { return /\.png$/i.test(nome); }
+function chaveMesDeData(dataStr) { return dataStr.slice(0, 7); }   // "AAAA-MM-DD" -> "AAAA-MM"
+
+const galeria = document.getElementById("galeria");
+const galeriaConteudo = document.getElementById("galeria-conteudo");
+const galeriaTrilha = document.getElementById("galeria-trilha");
+
+let galeriaIndice = null;      // Map: chaveMes -> { rotulo, pacientes: Map<nome, {nome, dirs}> }
+let galeriaURLs = [];          // object URLs abertas; revogadas ao fechar (evita vazamento)
+let galeriaObserver = null;    // IntersectionObserver das miniaturas (carga preguicosa)
+let ultimoSalvo = null;        // {chaveMes, nome} da ultima paciente salva (atalho do cartao)
+
+function novoObjectURL(blobOuFile) { const u = URL.createObjectURL(blobOuFile); galeriaURLs.push(u); return u; }
+function revogarURLsGaleria() { galeriaURLs.forEach(u => URL.revokeObjectURL(u)); galeriaURLs = []; }
+function desconectarObserver() { if (galeriaObserver) { galeriaObserver.disconnect(); galeriaObserver = null; } }
+function galeriaMensagem(txt) {
+  const d = document.createElement("div"); d.className = "galeria-msg"; d.textContent = txt;
+  galeriaConteudo.replaceChildren(d);
+}
+
+// Le a arvore: nivel 1 (pastas de dia) agrupado por mes, nivel 2 (pastas
+// de paciente) reunido por nome. NAO le os arquivos ainda — isso fica para
+// quando a paciente for aberta, para nao travar em pastas grandes.
+async function montarIndiceGaleria(raiz) {
+  const meses = new Map();
+  for await (const [nome, handle] of raiz.entries()) {
+    if (handle.kind !== "directory") continue;         // arquivo solto no topo: ignora
+    const data = analisarPastaData(nome);
+    if (!data) continue;                               // pasta fora do padrao: ignora
+    let mes = meses.get(data.chaveMes);
+    if (!mes) { mes = { rotulo: data.rotuloMes, pacientes: new Map() }; meses.set(data.chaveMes, mes); }
+    try {
+      for await (const [nomePac, hPac] of handle.entries()) {
+        if (hPac.kind !== "directory") continue;       // arquivo solto dentro do dia: ignora
+        let pac = mes.pacientes.get(nomePac);
+        if (!pac) { pac = { nome: nomePac, dirs: [] }; mes.pacientes.set(nomePac, pac); }
+        pac.dirs.push({ handle: hPac, dataStr: data.dataStr });   // 2 dias -> 2 dirs, 1 paciente
+      }
+    } catch (e) { /* sem permissao nessa pasta de dia: pula sem quebrar */ }
+  }
+  return meses;
+}
+
+// Le as imagens PNG de uma paciente, juntando todos os dias dela no mes.
+async function listarImagensPaciente(pac) {
+  const imgs = [];
+  for (const d of pac.dirs) {
+    try {
+      for await (const [nomeArq, hArq] of d.handle.entries()) {
+        if (hArq.kind === "file" && ehPNG(nomeArq)) imgs.push({ handle: hArq, arquivo: nomeArq, dataStr: d.dataStr });
+      }
+    } catch (e) { /* sem permissao nessa subpasta: ignora */ }
+  }
+  imgs.sort((a, b) => (a.dataStr + a.arquivo).localeCompare(b.dataStr + b.arquivo, "pt"));
+  return imgs;
+}
+
+// --- Trilha (breadcrumb) clicavel -------------------------------------
+function renderTrilha(crumbs) {
+  galeriaTrilha.replaceChildren();
+  crumbs.forEach((c, i) => {
+    if (i > 0) { const s = document.createElement("span"); s.className = "sep"; s.textContent = "›"; galeriaTrilha.appendChild(s); }
+    const el = document.createElement(c.atual ? "span" : "a");
+    el.className = c.atual ? "atual" : "elo";
+    el.textContent = c.rotulo;
+    if (!c.atual && c.ir) { el.href = "#"; el.addEventListener("click", (e) => { e.preventDefault(); c.ir(); }); }
+    galeriaTrilha.appendChild(el);
+  });
+}
+
+// --- Nivel 1: meses ---------------------------------------------------
+function renderMeses() {
+  desconectarObserver();
+  renderTrilha([{ rotulo: "Meses", atual: true }]);
+  const chaves = [...galeriaIndice.keys()].sort().reverse();   // mais recente primeiro
+  if (chaves.length === 0) {
+    galeriaMensagem("Nenhum exame encontrado nesta pasta. As imagens salvas pelo app aparecem aqui, organizadas por mes.");
+    return;
+  }
+  const ul = document.createElement("ul"); ul.className = "galeria-lista";
+  for (const ch of chaves) {
+    const mes = galeriaIndice.get(ch);
+    const n = mes.pacientes.size;
+    const li = document.createElement("li"); li.className = "galeria-item";
+    const rot = document.createElement("span"); rot.textContent = mes.rotulo;
+    const dir = document.createElement("span");
+    const conta = document.createElement("span"); conta.className = "conta";
+    conta.textContent = n + (n === 1 ? " paciente" : " pacientes");
+    const seta = document.createElement("span"); seta.className = "seta"; seta.textContent = "›";
+    dir.append(conta, " ", seta);
+    li.append(rot, dir);
+    li.addEventListener("click", () => renderPacientes(ch));
+    ul.appendChild(li);
+  }
+  galeriaConteudo.replaceChildren(ul);
+}
+
+// --- Nivel 2: pacientes do mes ---------------------------------------
+function renderPacientes(chMes) {
+  desconectarObserver();
+  const mes = galeriaIndice.get(chMes);
+  renderTrilha([
+    { rotulo: "Meses", ir: renderMeses },
+    { rotulo: mes.rotulo, atual: true },
+  ]);
+  const nomes = [...mes.pacientes.keys()].sort((a, b) => a.localeCompare(b, "pt"));
+  if (nomes.length === 0) { galeriaMensagem("Nenhuma paciente neste mes."); return; }
+  const ul = document.createElement("ul"); ul.className = "galeria-lista";
+  for (const nome of nomes) {
+    const li = document.createElement("li"); li.className = "galeria-item";
+    const rot = document.createElement("span"); rot.textContent = nome;
+    const seta = document.createElement("span"); seta.className = "seta"; seta.textContent = "›";
+    li.append(rot, seta);
+    li.addEventListener("click", () => renderImagens(chMes, nome));
+    ul.appendChild(li);
+  }
+  galeriaConteudo.replaceChildren(ul);
+}
+
+// --- Nivel 3: imagens da paciente (miniaturas preguicosas) -----------
+async function renderImagens(chMes, nome) {
+  desconectarObserver();
+  const mes = galeriaIndice.get(chMes);
+  const pac = mes.pacientes.get(nome);
+  renderTrilha([
+    { rotulo: "Meses", ir: renderMeses },
+    { rotulo: mes.rotulo, ir: () => renderPacientes(chMes) },
+    { rotulo: nome, atual: true },
+  ]);
+  galeriaMensagem("Carregando imagens…");
+  let imgs;
+  try { imgs = await listarImagensPaciente(pac); }
+  catch (e) { galeriaMensagem("Nao foi possivel ler as imagens desta paciente (permissao negada)."); return; }
+  if (imgs.length === 0) { galeriaMensagem("Esta paciente nao tem imagens PNG salvas nesta pasta."); return; }
+
+  const grade = document.createElement("div"); grade.className = "galeria-grade";
+  imgs.forEach((img, i) => {
+    const cel = document.createElement("div"); cel.className = "galeria-cel";
+    const mold = document.createElement("div"); mold.className = "moldura"; mold.dataset.i = i;
+    const car = document.createElement("span"); car.className = "carregando"; car.textContent = "…";
+    mold.appendChild(car);
+    const leg = document.createElement("div"); leg.className = "legenda";
+    const dia = document.createElement("span"); dia.className = "dia"; dia.textContent = img.dataStr;
+    leg.append(dia, document.createElement("br"), document.createTextNode(img.arquivo));
+    cel.append(mold, leg);
+    cel.addEventListener("click", () => renderVisualizador(img, chMes, nome));
+    grade.appendChild(cel);
+  });
+  galeriaConteudo.replaceChildren(grade);
+
+  // Carga preguicosa: so busca o arquivo da miniatura quando ela chega perto da tela.
+  galeriaObserver = new IntersectionObserver((entradas, obs) => {
+    for (const en of entradas) {
+      if (!en.isIntersecting) continue;
+      obs.unobserve(en.target);
+      carregarMiniatura(en.target, imgs[+en.target.dataset.i]);
+    }
+  }, { root: galeriaConteudo, rootMargin: "300px" });
+  grade.querySelectorAll(".moldura").forEach(el => galeriaObserver.observe(el));
+}
+
+async function carregarMiniatura(mold, img) {
+  try {
+    const file = await img.handle.getFile();
+    const im = new Image();
+    im.alt = img.arquivo;
+    im.onload = () => mold.replaceChildren(im);
+    im.onerror = () => { const q = document.createElement("span"); q.className = "quebrada"; q.textContent = "arquivo ilegivel"; mold.replaceChildren(q); };
+    im.src = novoObjectURL(file);
+  } catch (e) {
+    const q = document.createElement("span"); q.className = "quebrada"; q.textContent = "sem acesso"; mold.replaceChildren(q);
+  }
+}
+
+// --- Visualizacao de uma imagem em tamanho grande --------------------
+async function renderVisualizador(img, chMes, nome) {
+  desconectarObserver();
+  const mes = galeriaIndice.get(chMes);
+  renderTrilha([
+    { rotulo: "Meses", ir: renderMeses },
+    { rotulo: mes.rotulo, ir: () => renderPacientes(chMes) },
+    { rotulo: nome, ir: () => renderImagens(chMes, nome) },
+    { rotulo: img.arquivo, atual: true },
+  ]);
+  galeriaMensagem("Carregando…");
+  try {
+    const file = await img.handle.getFile();
+    const im = new Image(); im.alt = img.arquivo;
+    im.onerror = () => galeriaMensagem("Nao foi possivel abrir este arquivo de imagem.");
+    im.onload = () => {
+      const visu = document.createElement("div"); visu.className = "galeria-visu";
+      const leg = document.createElement("div"); leg.className = "legenda";
+      leg.textContent = nome + " — " + img.dataStr + " — " + img.arquivo;
+      visu.append(im, leg);
+      galeriaConteudo.replaceChildren(visu);
+    };
+    im.src = novoObjectURL(file);
+  } catch (e) { galeriaMensagem("Nao foi possivel abrir este arquivo."); }
+}
+
+// --- Abrir / fechar ---------------------------------------------------
+async function abrirGaleria(filtro) {
+  if (!suportaFSA) { definirStatus("A galeria de exames precisa do Chrome ou Edge.", "aviso"); return; }
+  if (!pastaSalvamento) {
+    definirStatus("Escolha primeiro a pasta de salvamento para ver os exames anteriores.", "aviso");
+    pastaBtn.style.display = "inline-block";
+    return;
+  }
+  if (!(await temPermissao(pastaSalvamento, true))) {
+    definirStatus("Preciso da permissao na pasta para ler os exames anteriores.", "aviso");
+    return;
+  }
+  galeria.style.display = "flex";
+  galeriaTrilha.replaceChildren();
+  galeriaMensagem("Lendo a pasta…");
+  try { galeriaIndice = await montarIndiceGaleria(pastaSalvamento); }
+  catch (e) { galeriaMensagem("Nao foi possivel ler a pasta. Confira a permissao e tente de novo."); return; }
+
+  // Atalho vindo do cartao pos-salvamento: abre direto na paciente recem-salva.
+  if (filtro && galeriaIndice.has(filtro.chaveMes) && galeriaIndice.get(filtro.chaveMes).pacientes.has(filtro.nome)) {
+    renderImagens(filtro.chaveMes, filtro.nome);
+    return;
+  }
+  renderMeses();
+}
+
+function fecharGaleria() {
+  desconectarObserver();
+  revogarURLsGaleria();
+  galeriaIndice = null;
+  galeria.style.display = "none";
+}
+
+document.getElementById("btn-galeria").addEventListener("click", () => abrirGaleria());
+document.getElementById("galeria-fechar").addEventListener("click", fecharGaleria);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && galeria.style.display !== "none") fecharGaleria();
+});
+document.getElementById("cartao-galeria").addEventListener("click", () => {
+  if (ultimoSalvo) abrirGaleria(ultimoSalvo); else abrirGaleria();
+});
 
 // ===================================================================
 //  STATUS
