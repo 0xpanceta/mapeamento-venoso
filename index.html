@@ -182,9 +182,34 @@
     .canvas-area { display: block; text-align: center; padding: 0; background: white; overflow: visible; }
     canvas { box-shadow: none; max-width: 100%; max-height: none; }
   }
+  /* Bloqueio em telas pequenas / celular */
+  #bloqueio-mobile {
+    display: none;
+    position: fixed; inset: 0; z-index: 9999;
+    background: var(--verde-escuro); color: white;
+    flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 32px; gap: 18px;
+  }
+  #bloqueio-mobile svg { width: 72px; height: 72px; opacity: 0.9; }
+  #bloqueio-mobile h2 { font-size: 22px; margin: 0; font-weight: 600; }
+  #bloqueio-mobile p { font-size: 15px; margin: 0; max-width: 420px; line-height: 1.5; opacity: 0.9; }
+  @media (max-width: 600px) {
+    #bloqueio-mobile { display: flex; }
+    header, .corpo, .status, .cartao-salvo, .galeria { display: none !important; }
+    body { overflow: hidden; }
+  }
 </style>
 </head>
 <body>
+
+<div id="bloqueio-mobile">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="4" width="20" height="13" rx="2"></rect>
+    <path d="M8 21h8M12 17v4"></path>
+  </svg>
+  <h2>Abra no computador</h2>
+  <p>Este aplicativo foi feito para uso no <strong>desktop</strong> e não funciona em celulares ou tablets. Por favor, acesse pelo computador para realizar o mapeamento venoso.</p>
+</div>
 
 <header>
   <div>
