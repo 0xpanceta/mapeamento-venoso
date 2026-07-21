@@ -245,6 +245,9 @@
       <button class="ferramenta-btn" data-tipo="perfurante" data-cor="#d32f2f">
         <span class="amostra-x" style="color:#d32f2f">&#8855;</span> Incompetente
       </button>
+      <button class="ferramenta-btn" data-tipo="perfurante" data-cor="#111111">
+        <span class="amostra-x" style="color:#111111">&#8855;</span> Trombosada
+      </button>
     </div>
 
     <div>
@@ -458,7 +461,30 @@ function desenharPerfurante(t) {
   ctx.moveTo(p.x - d, p.y - d); ctx.lineTo(p.x + d, p.y + d);
   ctx.moveTo(p.x + d, p.y - d); ctx.lineTo(p.x - d, p.y + d);
   ctx.stroke();
+  if (t.valor != null) {
+    const fonte = Math.max(11, raio * 1.3);
+    ctx.font = "bold " + fonte + "px system-ui, Arial, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = t.cor;
+    ctx.fillText(String(t.valor), p.x + raio + 4, p.y);
+  }
   ctx.restore();
+}
+
+// Pede um valor obrigatorio de 0 a 100 para o perfurante.
+// Retorna o numero, ou null se o usuario cancelar.
+function pedirValorPerfurante() {
+  while (true) {
+    const entrada = prompt("Valor do perfurante (0 a 100):");
+    if (entrada === null) return null;               // cancelou
+    const texto = entrada.trim().replace(",", ".");
+    const valor = Number(texto);
+    if (texto !== "" && Number.isFinite(valor) && valor >= 0 && valor <= 100) {
+      return valor;
+    }
+    alert("Informe um numero entre 0 e 100.");
+  }
 }
 
 function posicao(e) {
@@ -471,7 +497,9 @@ function posicao(e) {
 canvas.addEventListener("pointerdown", (e) => {
   if (!imagemModelo) return;
   if (tipoAtual === "perfurante") {
-    tracos.push({ tipo: "perfurante", cor: corAtual, espessura: espessuraAtual, pontos: [posicao(e)] });
+    const valor = pedirValorPerfurante();
+    if (valor === null) return;
+    tracos.push({ tipo: "perfurante", cor: corAtual, espessura: espessuraAtual, valor: valor, pontos: [posicao(e)] });
     redesenhar();
     return;
   }
