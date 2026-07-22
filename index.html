@@ -198,9 +198,81 @@
     header, .corpo, .status, .cartao-salvo, .galeria { display: none !important; }
     body { overflow: hidden; }
   }
+  /* Bloqueio de navegador (apenas Chrome ou Edge) */
+  #bloqueio-navegador {
+    display: none;
+    position: fixed; inset: 0; z-index: 10000;
+    background: var(--verde-escuro); color: white;
+    flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 32px; gap: 18px; overflow-y: auto;
+  }
+  #bloqueio-navegador.ativo { display: flex; }
+  body.navegador-bloqueado { overflow: hidden; }
+  #bloqueio-navegador svg { width: 64px; height: 64px; opacity: 0.9; }
+  #bloqueio-navegador h2 { font-size: 24px; margin: 0; font-weight: 600; }
+  #bloqueio-navegador p { font-size: 15px; margin: 0; max-width: 520px; line-height: 1.55; opacity: 0.95; }
+  #bloqueio-navegador .instrucoes {
+    text-align: left; max-width: 520px; width: 100%;
+    background: rgba(255,255,255,0.10); border-radius: 12px;
+    padding: 18px 22px; display: flex; flex-direction: column; gap: 16px;
+  }
+  #bloqueio-navegador .instrucoes h3 { font-size: 16px; margin: 0 0 6px; font-weight: 600; }
+  #bloqueio-navegador .instrucoes ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+  #bloqueio-navegador .instrucoes li { font-size: 14px; line-height: 1.5; }
+  #bloqueio-navegador .link-endereco {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  #bloqueio-navegador .link-endereco code {
+    background: rgba(0,0,0,0.25); padding: 6px 10px; border-radius: 6px;
+    font-size: 13px; word-break: break-all; flex: 1 1 auto;
+  }
+  #bloqueio-navegador .btn-copiar {
+    background: white; color: var(--verde-escuro); border: none;
+    border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+  }
+  #bloqueio-navegador .btn-baixar {
+    background: white; color: var(--verde-escuro); text-decoration: none;
+    border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 600;
+    display: inline-block;
+  }
 </style>
 </head>
 <body>
+
+<div id="bloqueio-navegador">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="2" y1="12" x2="22" y2="12"></line>
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+  </svg>
+  <h2>Abra no Google Chrome</h2>
+  <p>Este aplicativo funciona apenas no <strong>Google Chrome</strong> (ou Microsoft Edge). O navegador que você está usando agora não é compatível. Siga os passos abaixo para continuar.</p>
+
+  <div class="instrucoes">
+    <div>
+      <h3>Já tenho o Google Chrome</h3>
+      <ol>
+        <li>Abra o <strong>Google Chrome</strong> no computador (procure por "Chrome" no menu Iniciar do Windows ou no Launchpad do Mac).</li>
+        <li>Copie o endereço abaixo e cole na barra de endereços do Chrome:</li>
+      </ol>
+      <div class="link-endereco">
+        <code id="endereco-app"></code>
+        <button type="button" class="btn-copiar" id="btn-copiar-endereco">Copiar</button>
+      </div>
+    </div>
+    <div>
+      <h3>Ainda não tenho o Google Chrome</h3>
+      <ol>
+        <li>Baixe o Google Chrome gratuitamente pelo botão abaixo.</li>
+        <li>Instale o programa e abra-o.</li>
+        <li>Cole o endereço deste aplicativo na barra de endereços do Chrome.</li>
+      </ol>
+      <a class="btn-baixar" href="https://www.google.com/chrome/" target="_blank" rel="noopener">Baixar o Google Chrome</a>
+    </div>
+  </div>
+</div>
 
 <div id="bloqueio-mobile">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -318,6 +390,47 @@
 </div>
 
 <script>
+// ===================================================================
+//  BLOQUEIO DE NAVEGADOR
+//  O app depende de recursos disponiveis apenas em navegadores
+//  baseados em Chromium (Chrome/Edge), como o acesso direto a pastas.
+//  Em qualquer outro navegador (Firefox, Safari, Opera...) mostramos
+//  a tela de bloqueio com instrucoes e interrompemos o carregamento.
+// ===================================================================
+(function () {
+  const ua = navigator.userAgent;
+  const ehEdge = /Edg\//.test(ua);
+  const ehOpera = /OPR\//.test(ua) || /\bOpera\b/.test(ua);
+  const ehChrome = /Chrome\//.test(ua) && !ehEdge && !ehOpera;
+  const suportado = ehChrome || ehEdge;
+
+  if (!suportado) {
+    const overlay = document.getElementById("bloqueio-navegador");
+    const enderecoEl = document.getElementById("endereco-app");
+    const copiarBtn = document.getElementById("btn-copiar-endereco");
+    if (enderecoEl) enderecoEl.textContent = window.location.href;
+    if (copiarBtn) {
+      copiarBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(window.location.href);
+          copiarBtn.textContent = "Copiado!";
+          setTimeout(() => { copiarBtn.textContent = "Copiar"; }, 2000);
+        } catch (e) {
+          const faixa = document.createRange();
+          faixa.selectNodeContents(enderecoEl);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(faixa);
+        }
+      });
+    }
+    if (overlay) overlay.classList.add("ativo");
+    document.body.classList.add("navegador-bloqueado");
+    // Interrompe a execucao do restante do script do app.
+    throw new Error("Navegador nao suportado — use Google Chrome ou Edge.");
+  }
+})();
+
 // ===================================================================
 //  CONFIGURACAO
 // ===================================================================
