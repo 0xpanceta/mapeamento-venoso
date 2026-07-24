@@ -42,17 +42,26 @@
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
     color: #9aa89f; margin-bottom: 8px; font-weight: 600;
   }
-  .ferramenta-btn {
+  .ferramenta-btn, .modo-btn {
     display: flex; align-items: center; gap: 10px; width: 100%;
     padding: 8px 10px; border: 1.5px solid var(--cinza-borda); border-radius: 8px;
     background: white; cursor: pointer; font-size: 13px; text-align: left;
     margin-bottom: 5px; transition: all 0.12s;
   }
-  .ferramenta-btn:hover { border-color: var(--verde); }
-  .ferramenta-btn.ativo { border-color: var(--verde); background: #eef6f1; box-shadow: inset 0 0 0 1px var(--verde); }
+  .ferramenta-btn:hover, .modo-btn:hover { border-color: var(--verde); }
+  .ferramenta-btn.ativo, .modo-btn.ativo { border-color: var(--verde); background: #eef6f1; box-shadow: inset 0 0 0 1px var(--verde); }
   .amostra-cor { width: 24px; height: 4px; border-radius: 2px; flex-shrink: 0; }
   .amostra-x { width: 24px; text-align: center; font-weight: bold; flex-shrink: 0; font-size: 15px; }
   .amostra-quad { width: 24px; height: 14px; border-radius: 3px; flex-shrink: 0; border: 1px solid #ccc; }
+  .amostra-modo { width: 24px; text-align: center; flex-shrink: 0; font-size: 16px; }
+  /* Botao flutuante para concluir um traco reta/curva */
+  #btn-concluir-curva {
+    position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 45;
+    background: var(--verde); color: #fff; border: none; border-radius: 22px;
+    padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  }
+  #btn-concluir-curva:hover { background: var(--verde-escuro); }
   .controle-espessura { display: flex; flex-direction: column; gap: 6px; }
   .controle-espessura input { width: 100%; }
   .espessura-valor { font-size: 12px; color: #7a8a80; text-align: right; }
@@ -176,7 +185,7 @@
   }
   .galeria-visu .legenda { margin-top: 12px; font-size: 14px; color: #5a6a60; }
   @media print {
-    header, .ferramentas, .status, .cartao-salvo, .galeria { display: none !important; }
+    header, .ferramentas, .status, .cartao-salvo, .galeria, #btn-concluir-curva { display: none !important; }
     body { height: auto; display: block; }
     .corpo { display: block; }
     .canvas-area { display: block; text-align: center; padding: 0; background: white; overflow: visible; }
@@ -310,6 +319,16 @@
     </div>
 
     <div>
+      <div class="grupo-titulo">Traço das veias</div>
+      <button class="modo-btn ativo" data-modo="livre">
+        <span class="amostra-modo">&#9998;</span> À mão livre
+      </button>
+      <button class="modo-btn" data-modo="curva">
+        <span class="amostra-modo">&#8978;</span> Reta / curva
+      </button>
+    </div>
+
+    <div>
       <div class="grupo-titulo">Perfurante</div>
       <button class="ferramenta-btn" data-tipo="perfurante" data-cor="#1565d8">
         <span class="amostra-x" style="color:#1565d8">&#8855;</span> Competente
@@ -366,6 +385,9 @@
   <button class="pasta-btn" id="btn-reusar" style="display:none"></button>
   <button class="pasta-btn" id="btn-pasta" style="display:none">&#128193; Escolher pasta de salvamento</button>
 </div>
+
+<!-- Botao flutuante para concluir um traco no modo Reta/Curva. So aparece durante a edicao. -->
+<button id="btn-concluir-curva" style="display:none">&#10003; Concluir traço (Enter)</button>
 
 <!-- Cartao de confirmacao pos-salvamento (Tarefa 2). Fica escondido ate salvar. -->
 <div class="cartao-salvo" id="cartao-salvo" style="display:none">
@@ -434,7 +456,7 @@
 // ===================================================================
 //  CONFIGURACAO
 // ===================================================================
-const ARQUIVO_MODELO = "Modelo.png";
+const ARQUIVO_MODELO = "Modelo.svg";
 
 // ===================================================================
 //  MEMORIA DA PASTA (IndexedDB)
@@ -482,6 +504,15 @@ async function idbLerPasta() {
 // ===================================================================
 const canvas = document.getElementById("tela");
 const ctx = canvas.getContext("2d");
+// Camada de desenho isolada (offscreen). Os traços (incluindo a borracha, que
+// usa "destination-out") são desenhados AQUI e depois compostos sobre a base.
+// Assim a borracha só apaga o desenho — nunca o modelo nem o nome. (Mudança 4)
+const canvasDesenho = document.createElement("canvas");
+const dctx = canvasDesenho.getContext("2d");
+function ajustarCanvasDesenho() {
+  canvasDesenho.width = canvas.width;
+  canvasDesenho.height = canvas.height;
+}
 const canvasArea = document.querySelector(".canvas-area");
 const statusTexto = document.getElementById("status-texto");
 const statusBar = document.getElementById("status");
@@ -494,6 +525,12 @@ let desenhando = false;
 let corAtual = "#1565d8";
 let tipoAtual = "linha";   // "linha", "perfurante" ou "borracha"
 let espessuraAtual = 3;
+
+// Modo de traço das veias: "livre" (à mão) ou "curva" (reta ajustável, estilo Paint).
+// Só afeta as ferramentas de veia (tipo "linha"); perfurante e borracha ignoram.
+let modoTraco = "livre";
+// Curva em construção (null quando não há nenhuma). Ver seção "FERRAMENTA RETA / CURVA".
+let curva = null;
 
 let pastaSalvamento = null;
 const suportaFSA = "showDirectoryPicker" in window;
@@ -508,6 +545,7 @@ function carregarModelo() {
       imagemModelo = img;
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
+      ajustarCanvasDesenho();
       redesenhar();
       aplicarZoom();
       definirStatus("Pronto. Digite o nome da paciente e comece a desenhar.", "ok");
@@ -526,62 +564,110 @@ function carregarModelo() {
 //  DESENHO
 // ===================================================================
 function redesenhar() {
+  // 1) Camada base (protegida): modelo + nome da paciente. A borracha nunca chega aqui.
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (imagemModelo) ctx.drawImage(imagemModelo, 0, 0, canvas.width, canvas.height);
-  for (const t of tracos) desenharElemento(t);
-  if (tracoAtual) desenharElemento(tracoAtual);
+  desenharNomePaciente();
+  // 2) Camada de desenho (offscreen): traços + borracha isolados.
+  dctx.clearRect(0, 0, canvasDesenho.width, canvasDesenho.height);
+  for (const t of tracos) desenharElemento(dctx, t);
+  if (tracoAtual) desenharElemento(dctx, tracoAtual);
+  if (curva) desenharCurvaEdicao(dctx, curva);
+  // 3) Compõe o desenho sobre a base.
+  ctx.drawImage(canvasDesenho, 0, 0);
 }
 
-function desenharElemento(t) {
-  if (t.tipo === "perfurante") { desenharPerfurante(t); return; }
-  desenharLinha(t);
+function desenharElemento(cx, t) {
+  if (t.tipo === "perfurante") { desenharPerfurante(cx, t); return; }
+  if (t.tipo === "curva") { desenharCurva(cx, t); return; }
+  desenharLinha(cx, t);
 }
 
-function desenharLinha(t) {
+// Traco reta/curva ja concluido: uma Bezier cubica (p0->p3, controles p1 e p2).
+function desenharCurva(cx, t) {
+  cx.save();
+  cx.lineJoin = "round";
+  cx.lineCap = "round";
+  cx.lineWidth = t.espessura;
+  cx.globalCompositeOperation = "source-over";
+  cx.strokeStyle = t.cor;
+  cx.beginPath();
+  cx.moveTo(t.p0.x, t.p0.y);
+  cx.bezierCurveTo(t.p1.x, t.p1.y, t.p2.x, t.p2.y, t.p3.x, t.p3.y);
+  cx.stroke();
+  cx.restore();
+}
+
+function desenharLinha(cx, t) {
   if (t.pontos.length < 1) return;
-  ctx.save();
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  ctx.lineWidth = t.espessura;
+  cx.save();
+  cx.lineJoin = "round";
+  cx.lineCap = "round";
+  cx.lineWidth = t.espessura;
   if (t.tipo === "borracha") {
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.strokeStyle = "rgba(0,0,0,1)";
+    cx.globalCompositeOperation = "destination-out";
+    cx.strokeStyle = "rgba(0,0,0,1)";
   } else {
-    ctx.globalCompositeOperation = "source-over";
-    ctx.strokeStyle = t.cor;
+    cx.globalCompositeOperation = "source-over";
+    cx.strokeStyle = t.cor;
   }
-  ctx.beginPath();
-  ctx.moveTo(t.pontos[0].x, t.pontos[0].y);
-  for (let i = 1; i < t.pontos.length; i++) ctx.lineTo(t.pontos[i].x, t.pontos[i].y);
-  if (t.pontos.length === 1) ctx.lineTo(t.pontos[0].x + 0.1, t.pontos[0].y + 0.1);
-  ctx.stroke();
-  ctx.restore();
+  cx.beginPath();
+  cx.moveTo(t.pontos[0].x, t.pontos[0].y);
+  for (let i = 1; i < t.pontos.length; i++) cx.lineTo(t.pontos[i].x, t.pontos[i].y);
+  if (t.pontos.length === 1) cx.lineTo(t.pontos[0].x + 0.1, t.pontos[0].y + 0.1);
+  cx.stroke();
+  cx.restore();
 }
 
 // Perfurante = simbolo circulo-com-X na cor da veia
-function desenharPerfurante(t) {
+function desenharPerfurante(cx, t) {
   const p = t.pontos[0];
   const raio = Math.max(7, t.espessura * 2.6);
-  ctx.save();
-  ctx.globalCompositeOperation = "source-over";
-  ctx.strokeStyle = t.cor;
-  ctx.lineWidth = Math.max(1.6, t.espessura * 0.7);
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, raio, 0, Math.PI * 2);
-  ctx.stroke();
+  cx.save();
+  cx.globalCompositeOperation = "source-over";
+  cx.strokeStyle = t.cor;
+  cx.lineWidth = Math.max(1.6, t.espessura * 0.7);
+  cx.beginPath();
+  cx.arc(p.x, p.y, raio, 0, Math.PI * 2);
+  cx.stroke();
   const d = raio * 0.7;
-  ctx.beginPath();
-  ctx.moveTo(p.x - d, p.y - d); ctx.lineTo(p.x + d, p.y + d);
-  ctx.moveTo(p.x + d, p.y - d); ctx.lineTo(p.x - d, p.y + d);
-  ctx.stroke();
+  cx.beginPath();
+  cx.moveTo(p.x - d, p.y - d); cx.lineTo(p.x + d, p.y + d);
+  cx.moveTo(p.x + d, p.y - d); cx.lineTo(p.x - d, p.y + d);
+  cx.stroke();
   if (t.valor != null) {
     const fonte = Math.max(11, raio * 1.3);
-    ctx.font = "bold " + fonte + "px system-ui, Arial, sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = t.cor;
-    ctx.fillText(String(t.valor), p.x + raio + 4, p.y);
+    cx.font = "bold " + fonte + "px system-ui, Arial, sans-serif";
+    cx.textAlign = "left";
+    cx.textBaseline = "middle";
+    cx.fillStyle = t.cor;
+    cx.fillText(String(t.valor), p.x + raio + 4, p.y);
   }
+  cx.restore();
+}
+
+// ---- Nome da paciente no modelo (Mudança 3) --------------------------
+// Desenhado na CAMADA BASE (não apagável pela borracha), sob o título, no
+// cabeçalho. Atualiza ao vivo conforme digita. Capitaliza só a 1ª letra de
+// cada nome via titulizarNome().
+function titulizarNome(s) {
+  return String(s).split(/\s+/).filter(Boolean).map(function (w) {
+    return w.charAt(0).toLocaleUpperCase("pt-BR") + w.slice(1).toLocaleLowerCase("pt-BR");
+  }).join(" ");
+}
+function desenharNomePaciente() {
+  const bruto = (document.getElementById("paciente").value || "").trim();
+  if (!bruto) return;
+  const texto = "Paciente: " + titulizarNome(bruto);
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  // Coordenadas no espaço do modelo (1054 × 1492). Faixa livre entre o título
+  // e as caixas DIREITO/ESQUERDO.
+  ctx.font = "600 27px 'Segoe UI', system-ui, Arial, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#1f5637";
+  ctx.fillText(texto, 288, 212);
   ctx.restore();
 }
 
@@ -607,8 +693,15 @@ function posicao(e) {
   return { x: (e.clientX - r.left) * escalaX, y: (e.clientY - r.top) * escalaY };
 }
 
+// Tipo de traco efetivo agora: uma veia (tipo "linha") vira "curva" quando o
+// modo Reta/Curva esta ligado. Perfurante e borracha nao mudam.
+function tipoEfetivoAgora() {
+  return (tipoAtual === "linha" && modoTraco === "curva") ? "curva" : tipoAtual;
+}
+
 canvas.addEventListener("pointerdown", (e) => {
   if (!imagemModelo) return;
+  if (tipoEfetivoAgora() === "curva") { curvaPointerDown(e); return; }
   if (tipoAtual === "perfurante") {
     const valor = pedirValorPerfurante();
     if (valor === null) return;
@@ -622,6 +715,7 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 
 canvas.addEventListener("pointermove", (e) => {
+  if (tipoEfetivoAgora() === "curva") { curvaPointerMove(e); return; }
   if (!desenhando) return;
   tracoAtual.pontos.push(posicao(e));
   redesenhar();
@@ -634,26 +728,265 @@ function terminarTraco() {
   tracoAtual = null;
   redesenhar();
 }
-canvas.addEventListener("pointerup", terminarTraco);
-canvas.addEventListener("pointercancel", terminarTraco);
+canvas.addEventListener("pointerup", (e) => {
+  if (tipoEfetivoAgora() === "curva") { curvaPointerUp(e); return; }
+  terminarTraco();
+});
+canvas.addEventListener("pointercancel", (e) => {
+  if (tipoEfetivoAgora() === "curva") { curvaPointerUp(e); return; }
+  terminarTraco();
+});
+
+// ===================================================================
+//  FERRAMENTA RETA / CURVA (estilo "Curva" do Paint)
+//  Uso: com o modo "Reta / curva" ligado, a medica clica no INICIO e
+//  depois no FIM da veia -> aparece uma reta. Em seguida ela pode
+//  ARRASTAR qualquer parte da reta para curva-la (Bezier). Repetir o
+//  arrasto refina; arrastar perto do inicio dobra um lado, perto do
+//  fim dobra o outro (permite ate um "S"). Conclui com Enter, com o
+//  botao flutuante, trocando de ferramenta ou clicando numa area vazia
+//  (o que ja comeca a proxima reta). Esc cancela; Ctrl+Z tambem.
+//
+//  Modelo: Bezier cubica com pontos p0 (inicio), p3 (fim) e dois
+//  controles p1, p2. A reta inicial tem p1/p2 a 1/3 e 2/3 do caminho
+//  (o que desenha uma linha perfeitamente reta). Ao arrastar um ponto
+//  da curva no parametro t, resolvemos o controle p1 OU p2 para que a
+//  curva passe exatamente pelo cursor -> sensacao de "pegar e puxar".
+//
+//  Por que um MODO (e nao uma cor/botao a mais): a medica escolhe a cor
+//  da veia como sempre (Competente/Incompetente/Trombosada) e so troca
+//  COMO desenha. Perfurante e borracha nao sao afetados.
+// ===================================================================
+let bendAtivo = false;     // esta arrastando para curvar?
+let bendQual = null;       // "p1" ou "p2" (qual controle o arrasto move)
+let bendT = 0.5;           // parametro t onde o arrasto "pegou" a curva
+let grabFar = false;       // o clique caiu longe da curva (= concluir e comecar outra)
+let grabPos = null;        // posicao desse clique
+
+const btnConcluir = document.getElementById("btn-concluir-curva");
+function mostrarConcluir(b) { btnConcluir.style.display = b ? "block" : "none"; }
+
+// Fator para converter tolerancia em px de tela para px do canvas (o canvas
+// e exibido redimensionado pelo zoom; posicao() ja devolve px do canvas).
+function escalaCanvas() {
+  const r = canvas.getBoundingClientRect();
+  return r.width ? canvas.width / r.width : 1;
+}
+
+// Ponto da Bezier cubica no parametro t.
+function pontoCurva(c, t) {
+  const u = 1 - t;
+  return {
+    x: u*u*u*c.p0.x + 3*u*u*t*c.p1.x + 3*u*t*t*c.p2.x + t*t*t*c.p3.x,
+    y: u*u*u*c.p0.y + 3*u*u*t*c.p1.y + 3*u*t*t*c.p2.y + t*t*t*c.p3.y,
+  };
+}
+
+// t (0..1) do ponto da curva mais proximo de p, e sua distancia.
+function maisProximoNaCurva(c, p) {
+  let melhor = { t: 0, d: Infinity };
+  const N = 60;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const q = pontoCurva(c, t);
+    const d = Math.hypot(q.x - p.x, q.y - p.y);
+    if (d < melhor.d) melhor = { t, d };
+  }
+  return melhor;
+}
+
+// Move o controle (p1 ou p2) para que a curva passe por "alvo" no parametro t.
+// t e limitado a [0.15, 0.85] para o controle nao disparar perto das pontas.
+function ajustarControle(c, t, alvo, qual) {
+  t = Math.min(0.85, Math.max(0.15, t));
+  const u = 1 - t;
+  const c0 = u*u*u, c1 = 3*u*u*t, c2 = 3*u*t*t, c3 = t*t*t;
+  if (qual === "p1") {
+    c.p1 = {
+      x: (alvo.x - c0*c.p0.x - c2*c.p2.x - c3*c.p3.x) / c1,
+      y: (alvo.y - c0*c.p0.y - c2*c.p2.y - c3*c.p3.y) / c1,
+    };
+  } else {
+    c.p2 = {
+      x: (alvo.x - c0*c.p0.x - c1*c.p1.x - c3*c.p3.x) / c2,
+      y: (alvo.y - c0*c.p0.y - c1*c.p1.y - c3*c.p3.y) / c2,
+    };
+  }
+}
+
+// Desenha a curva enquanto esta sendo criada/editada, com alcas nas pontas.
+function desenharCurvaEdicao(cx, c) {
+  if (c.estado === "tracando") {
+    cx.save();
+    cx.setLineDash([6, 6]);
+    cx.lineWidth = c.espessura;
+    cx.lineCap = "round";
+    cx.globalAlpha = 0.85;
+    cx.strokeStyle = c.cor;
+    cx.beginPath();
+    cx.moveTo(c.p0.x, c.p0.y);
+    cx.lineTo(c.p3.x, c.p3.y);
+    cx.stroke();
+    cx.restore();
+  } else {
+    desenharCurva(cx, c);
+  }
+  // Alcas brancas com borda na cor, nas duas pontas (mostram que esta editavel).
+  cx.save();
+  cx.globalCompositeOperation = "source-over";
+  const raio = Math.max(5, c.espessura * 1.2);
+  for (const p of [c.p0, c.p3]) {
+    cx.beginPath();
+    cx.arc(p.x, p.y, raio, 0, Math.PI * 2);
+    cx.fillStyle = "#fff";
+    cx.fill();
+    cx.lineWidth = 2;
+    cx.strokeStyle = c.cor;
+    cx.stroke();
+  }
+  cx.restore();
+}
+
+// Comeca uma reta nova: primeiro ponto = pos, aguardando o ponto final.
+function iniciarReta(pos) {
+  curva = {
+    estado: "tracando", cor: corAtual, espessura: espessuraAtual,
+    p0: { ...pos }, p1: { ...pos }, p2: { ...pos }, p3: { ...pos },
+  };
+  mostrarConcluir(true);
+  atualizarDicaTraco();
+  redesenhar();
+}
+
+// Fixa o ponto final e passa para o modo de curvar (controles em reta).
+function retaColocarFim(pos) {
+  curva.p3 = { ...pos };
+  const dx = curva.p3.x - curva.p0.x, dy = curva.p3.y - curva.p0.y;
+  curva.p1 = { x: curva.p0.x + dx / 3, y: curva.p0.y + dy / 3 };
+  curva.p2 = { x: curva.p0.x + 2 * dx / 3, y: curva.p0.y + 2 * dy / 3 };
+  curva.estado = "editando";
+  atualizarDicaTraco();
+  redesenhar();
+}
+
+// Conclui: guarda a curva atual em "tracos" (se ja tiver as duas pontas).
+function finalizarCurva() {
+  if (!curva) return;
+  if (curva.estado === "editando") {
+    tracos.push({
+      tipo: "curva", cor: curva.cor, espessura: curva.espessura,
+      p0: { ...curva.p0 }, p1: { ...curva.p1 }, p2: { ...curva.p2 }, p3: { ...curva.p3 },
+    });
+  }
+  curva = null; bendAtivo = false; grabFar = false;
+  mostrarConcluir(false);
+  atualizarDicaTraco();
+  redesenhar();
+}
+
+// Descarta a curva em construcao sem salvar.
+function cancelarCurva() {
+  curva = null; bendAtivo = false; grabFar = false;
+  mostrarConcluir(false);
+  atualizarDicaTraco();
+  redesenhar();
+}
+
+function curvaPointerDown(e) {
+  const pos = posicao(e);
+  if (!curva) { iniciarReta(pos); return; }
+  if (curva.estado === "tracando") { retaColocarFim(pos); return; }
+  // Editando: perto da curva -> curvar; longe -> concluir e comecar outra.
+  const prox = maisProximoNaCurva(curva, pos);
+  const tol = 20 * escalaCanvas();
+  grabPos = pos;
+  if (prox.d <= tol) {
+    bendAtivo = true;
+    bendT = Math.min(0.85, Math.max(0.15, prox.t));
+    bendQual = bendT < 0.5 ? "p1" : "p2";
+    grabFar = false;
+    canvas.setPointerCapture(e.pointerId);
+  } else {
+    grabFar = true;
+    bendAtivo = false;
+  }
+}
+
+function curvaPointerMove(e) {
+  if (!curva) return;
+  const pos = posicao(e);
+  if (curva.estado === "tracando") { curva.p3 = { ...pos }; redesenhar(); return; }
+  if (bendAtivo) { ajustarControle(curva, bendT, pos, bendQual); redesenhar(); }
+}
+
+function curvaPointerUp(e) {
+  if (!curva) return;
+  if (bendAtivo) {
+    bendAtivo = false;
+    try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    return;
+  }
+  if (curva.estado === "tracando") {
+    // Se arrastou uma distancia real (press-drag-release), ja fixa o fim.
+    const d = Math.hypot(curva.p3.x - curva.p0.x, curva.p3.y - curva.p0.y);
+    if (d > 6 * escalaCanvas()) retaColocarFim(curva.p3);
+    return;
+  }
+  if (grabFar) {
+    const pos = grabPos;
+    finalizarCurva();
+    iniciarReta(pos);
+    grabFar = false;
+  }
+}
+
+btnConcluir.addEventListener("click", finalizarCurva);
 
 // ===================================================================
 //  FERRAMENTAS
 // ===================================================================
 document.querySelectorAll(".ferramenta-btn").forEach(btn => {
   btn.addEventListener("click", () => {
+    finalizarCurva();   // conclui qualquer curva pendente ao trocar de ferramenta
     document.querySelectorAll(".ferramenta-btn").forEach(b => b.classList.remove("ativo"));
     btn.classList.add("ativo");
     tipoAtual = btn.dataset.tipo;
     if (btn.dataset.cor) corAtual = btn.dataset.cor;
+    atualizarDicaTraco();
   });
 });
+
+// Alternancia do modo de traco das veias (À mão livre / Reta / curva).
+document.querySelectorAll(".modo-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    finalizarCurva();   // ao trocar de modo, conclui a curva pendente
+    document.querySelectorAll(".modo-btn").forEach(b => b.classList.remove("ativo"));
+    btn.classList.add("ativo");
+    modoTraco = btn.dataset.modo;
+    atualizarDicaTraco();
+  });
+});
+
+// Mostra na barra de status a dica certa para o momento (so no modo curva).
+function atualizarDicaTraco() {
+  if (tipoEfetivoAgora() !== "curva") return;
+  if (curva && curva.estado === "tracando") {
+    definirStatus("Clique no ponto final da veia.", "aviso");
+  } else if (curva && curva.estado === "editando") {
+    definirStatus("Arraste a linha para curvá-la. Enter conclui; Esc cancela.", "aviso");
+  } else {
+    definirStatus("Modo reta/curva: clique no início e depois no fim da veia.", "aviso");
+  }
+}
 
 const sliderEsp = document.getElementById("espessura");
 sliderEsp.addEventListener("input", (e) => {
   espessuraAtual = parseInt(e.target.value, 10);
   document.getElementById("espessura-num").textContent = espessuraAtual;
 });
+
+// Nome da paciente aparece no modelo ao vivo enquanto digita (Mudança 3).
+document.getElementById("paciente").addEventListener("input", redesenhar);
 
 // ===================================================================
 //  ZOOM
@@ -720,6 +1053,7 @@ window.addEventListener("afterprint", aplicarZoom);
 //  DESFAZER / LIMPAR
 // ===================================================================
 function desfazer() {
+  if (curva) { cancelarCurva(); return; }   // curva em construcao: cancela primeiro
   if (tracos.length === 0) return;
   tracos.pop();
   redesenhar();
@@ -728,15 +1062,21 @@ document.getElementById("btn-desfazer").addEventListener("click", desfazer);
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); desfazer(); }
 });
+// Enter conclui a curva em edicao; Esc cancela. So agem quando ha uma curva.
+document.addEventListener("keydown", (e) => {
+  if (!curva) return;
+  if (e.key === "Enter") { e.preventDefault(); finalizarCurva(); }
+  else if (e.key === "Escape") { cancelarCurva(); }
+});
 document.getElementById("btn-limpar").addEventListener("click", () => {
-  if (tracos.length === 0) return;
-  if (confirm("Apagar todo o desenho? O modelo continua.")) { tracos = []; redesenhar(); }
+  if (tracos.length === 0 && !curva) return;
+  if (confirm("Apagar todo o desenho? O modelo continua.")) { tracos = []; cancelarCurva(); redesenhar(); }
 });
 
 // ===================================================================
 //  IMPRIMIR / PDF
 // ===================================================================
-document.getElementById("btn-imprimir").addEventListener("click", () => { window.print(); });
+document.getElementById("btn-imprimir").addEventListener("click", () => { finalizarCurva(); window.print(); });
 
 // ===================================================================
 //  SALVAMENTO
@@ -834,14 +1174,18 @@ document.getElementById("cartao-copiar").addEventListener("click", async () => {
 });
 
 async function salvar() {
+  finalizarCurva();   // garante que uma curva pendente entre na imagem salva
   const nome = document.getElementById("paciente").value;
   if (!nome.trim()) {
     definirStatus("Digite o nome ou codigo da paciente antes de salvar.", "erro");
     document.getElementById("paciente").focus();
     return;
   }
+  // Capitalização também no arquivo/pastas: só a 1ª letra de cada nome (Mudança 3).
+  const nomeBase = nomeSeguro(titulizarNome(nome));
+  redesenhar();   // garante o nome atual desenhado na base antes de exportar
   const blob = await gerarPNG();
-  const nomeArq = nomeSeguro(nome) + " - " + horaAgora() + ".png";
+  const nomeArq = nomeBase + " - " + horaAgora() + ".png";
 
   if (suportaFSA) {
     if (!pastaSalvamento) {
@@ -860,14 +1204,14 @@ async function salvar() {
     }
     try {
       const pDia = await subpasta(pastaSalvamento, dataHoje());
-      const pPac = await subpasta(pDia, nomeSeguro(nome));
+      const pPac = await subpasta(pDia, nomeBase);
       const arq = await pPac.getFileHandle(nomeArq, { create: true });
       const w = await arq.createWritable();
       await w.write(blob);
       await w.close();
-      definirStatus("OK Salvo: " + dataHoje() + " > " + nomeSeguro(nome) + " > " + nomeArq, "ok");
-      mostrarCartaoSalvo(blob, [pastaSalvamento.name, dataHoje(), nomeSeguro(nome), nomeArq]);
-      ultimoSalvo = { chaveMes: chaveMesDeData(dataHoje()), nome: nomeSeguro(nome) };
+      definirStatus("OK Salvo: " + dataHoje() + " > " + nomeBase + " > " + nomeArq, "ok");
+      mostrarCartaoSalvo(blob, [pastaSalvamento.name, dataHoje(), nomeBase, nomeArq]);
+      ultimoSalvo = { chaveMes: chaveMesDeData(dataHoje()), nome: nomeBase };
       return;
     } catch (err) {
       definirStatus("Nao deu para salvar na pasta (" + err.message + "). Baixando como alternativa.", "aviso");

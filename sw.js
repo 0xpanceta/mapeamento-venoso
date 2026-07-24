@@ -9,12 +9,12 @@
 //  Ao publicar uma alteracao, aumente o numero da VERSAO abaixo para
 //  que os navegadores substituam o cache antigo.
 // ===================================================================
-const VERSAO = "v1";
+const VERSAO = "v2";
 const CACHE = "mapeamento-venoso-" + VERSAO;
 const ESSENCIAIS = [
   "./",
   "./index.html",
-  "./Modelo.png",
+  "./Modelo.svg",
   "./manifest.webmanifest",
   "./icon.svg",
 ];

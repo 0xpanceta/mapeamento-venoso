@@ -70,7 +70,8 @@ mais nova.
 ```text
 mapeamento-venoso/
   index.html              <- o programa (é só abrir este arquivo)
-  Modelo.png              <- imagem-base, limpa, sem marcações
+  Modelo.svg              <- imagem-base usada pelo programa (embute o Modelo.png)
+  Modelo.png              <- imagem-base original, limpa (fonte/backup do SVG)
   manifest.webmanifest    <- permite instalar como aplicativo (PWA)
   sw.js                   <- faz o programa funcionar offline
   icon.svg                <- ícone do aplicativo
@@ -78,7 +79,7 @@ mapeamento-venoso/
   .gitignore              <- impede que imagens de pacientes vão para o GitHub
 ```
 
-O `index.html` e o `Modelo.png` **precisam ficar na mesma pasta**.
+O `index.html` e o `Modelo.svg` **precisam ficar na mesma pasta**.
 
 ---
 
@@ -110,6 +111,10 @@ imagens da mesma paciente feitas no mesmo dia.
 - **Veia competente** — traço azul
 - **Veia incompetente** — traço vermelho
 - **Veia trombosada** — traço preto
+- **Traço das veias** — alterna entre **À mão livre** e **Reta / curva**. No modo
+  Reta / curva, clique no início e no fim da veia para traçar uma reta e depois
+  arraste a linha para curvá-la (estilo "Curva" do Paint). Enter conclui;
+  Esc cancela.
 - **Perfurante competente** — símbolo ⊗ azul (um clique = um símbolo)
 - **Perfurante incompetente** — símbolo ⊗ vermelho (um clique = um símbolo)
 - **Borracha** — apaga o que foi desenhado (o modelo permanece)
@@ -120,11 +125,23 @@ imagens da mesma paciente feitas no mesmo dia.
 
 ## Como trocar a imagem-modelo
 
-1. Prepare a nova imagem, limpa, sem marcações.
-2. Renomeie-a para exatamente `Modelo.png` (com M maiúsculo).
-3. Substitua o `Modelo.png` da pasta pela nova.
+O programa carrega o `Modelo.svg`, que **embute** o `Modelo.png` dentro de si.
+Para trocar a imagem:
 
-Não é preciso mexer no código.
+1. Prepare a nova imagem, limpa, sem marcações, e salve como `Modelo.png`.
+2. Gere um novo `Modelo.svg` embutindo esse PNG (o SVG é só um invólucro com a
+   imagem em `data:` URI e as dimensões da imagem). Veja o passo a passo em
+   `MUDANCAS-PARA-REPLICAR.md` (Mudança 2).
+3. Substitua os dois arquivos na pasta e suba o número da `VERSAO` no `sw.js`.
+
+Não é preciso mexer na lógica do programa.
+
+## Nome da paciente no modelo
+
+Ao digitar o nome no campo "Paciente", ele aparece no cabeçalho do modelo (sob o
+título) e entra na imagem salva/impressa. Só a primeira letra de cada nome fica
+maiúscula (ex.: `maria JOSÉ da silva` → `Maria José Da Silva`), e essa mesma
+capitalização é usada no nome do arquivo e das pastas.
 
 ---
 
@@ -134,7 +151,7 @@ O arquivo `index.html` tem, no início do bloco `<script>`, uma seção
 de **CONFIGURAÇÃO**. O nome do arquivo-modelo fica lá:
 
 ```javascript
-const ARQUIVO_MODELO = "Modelo.png";
+const ARQUIVO_MODELO = "Modelo.svg";
 ```
 
 O restante do código está comentado em português, separado por seções
