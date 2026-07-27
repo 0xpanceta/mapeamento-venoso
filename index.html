@@ -94,6 +94,21 @@
     border-radius: 6px; background: white; cursor: pointer; margin-left: auto;
   }
   .pasta-btn:hover { border-color: var(--verde); }
+  /* Ação primária destacada: o "Usar pasta X" e o "Instalar app" devem
+     saltar aos olhos para o usuário não escolher outra pasta por engano. */
+  .pasta-btn.primario {
+    background: var(--verde); color: white; border-color: var(--verde);
+    font-weight: 600; padding: 5px 14px;
+  }
+  .pasta-btn.primario:hover { background: var(--verde-escuro); border-color: var(--verde-escuro); }
+  /* Ação secundária discreta: "Escolher outra pasta" fica de canto. */
+  .pasta-btn.secundario {
+    margin-left: 0; border-color: transparent; color: #7a8a80;
+    text-decoration: underline; padding: 4px 6px;
+  }
+  .pasta-btn.secundario:hover { color: var(--verde-escuro); border-color: transparent; }
+  /* Dica educativa sobre instalar o app (some quando já instalado). */
+  .dica-instalar { font-size: 11px; color: #7a8a80; margin-left: 8px; }
   /* Cartao de confirmacao pos-salvamento (Tarefa 2) --------------- */
   .cartao-salvo {
     position: fixed; right: 16px; bottom: 44px; z-index: 40;
@@ -400,7 +415,9 @@
 
 <div class="status" id="status">
   <span id="status-texto">Carregando modelo&#8230;</span>
+  <span class="dica-instalar" id="dica-instalar" style="display:none">Dica: instale o app para a pasta ficar fixa e n&atilde;o precisar reescolher.</span>
   <button class="pasta-btn" id="btn-reusar" style="display:none"></button>
+  <button class="pasta-btn" id="btn-instalar" style="display:none">&#11015;&#65039; Instalar app (deixa a pasta fixa)</button>
   <button class="pasta-btn" id="btn-pasta" style="display:none">&#128193; Escolher pasta de salvamento</button>
 </div>
 
@@ -1127,17 +1144,34 @@ const reusarBtn = document.getElementById("btn-reusar");
 // Mostra que uma pasta esta ativa e pronta para salvar.
 function pastaAtiva(nome) {
   pastaBtn.textContent = "📁 Trocar pasta (" + nome + ")";
+  pastaBtn.className = "pasta-btn";   // volta ao botao discreto (tira "secundario")
   pastaBtn.style.display = "inline-block";
   reusarBtn.style.display = "none";
   definirStatus("Pasta de salvamento: " + nome + ". Pronto para salvar.", "ok");
 }
 
+// Duas pastas sao a mesma? Usa isSameEntry (preciso) e cai para o nome se falhar.
+async function mesmaEntrada(a, b) {
+  try { return await a.isSameEntry(b); } catch (e) { return a.name === b.name; }
+}
+
 async function escolherPasta() {
+  const anterior = pastaSalvamento;        // pasta que ja estava em uso (pode ser null)
+  let escolhida;
   try {
-    pastaSalvamento = await window.showDirectoryPicker({ mode: "readwrite" });
-    await idbSalvarPasta(pastaSalvamento);   // lembra para as proximas sessoes
-    pastaAtiva(pastaSalvamento.name);
-  } catch (err) { /* cancelou */ }
+    escolhida = await window.showDirectoryPicker({ mode: "readwrite" });
+  } catch (err) { return; /* cancelou */ }
+  // Se ja havia uma pasta DIFERENTE, confirma a troca. Sem isso, e facil
+  // escolher outra pasta por engano e espalhar os documentos por varias.
+  if (anterior && !(await mesmaEntrada(anterior, escolhida))) {
+    const ok = confirm("Voce ja estava salvando na pasta \"" + anterior.name +
+      "\".\n\nTrocar para \"" + escolhida.name +
+      "\"? Os proximos exames irao para a pasta nova.");
+    if (!ok) { pastaAtiva(anterior.name); return; }
+  }
+  pastaSalvamento = escolhida;
+  await idbSalvarPasta(pastaSalvamento);    // lembra para as proximas sessoes
+  pastaAtiva(pastaSalvamento.name);
 }
 pastaBtn.addEventListener("click", escolherPasta);
 
@@ -1222,9 +1256,11 @@ async function salvar() {
     }
     // O clique em Salvar e um gesto valido para reautorizar a pasta lembrada.
     if (!(await temPermissao(pastaSalvamento, true))) {
-      definirStatus("A permissao para a pasta expirou. Escolha a pasta novamente.", "aviso");
+      definirStatus("A permissao para a pasta expirou. Escolha a pasta novamente " +
+        "e, no aviso do Chrome, clique \"Permitir sempre\".", "aviso");
       pastaSalvamento = null;
       pastaBtn.textContent = "📁 Escolher pasta de salvamento";
+      pastaBtn.className = "pasta-btn";
       pastaBtn.style.display = "inline-block";
       return;
     }
@@ -1597,12 +1633,17 @@ async function tentarReusarPasta() {
     return;
   }
   // Precisa de 1 confirmacao (regra de seguranca do Chrome ao reabrir).
+  // "Usar pasta X" vira a acao PRIMARIA e destacada; "Escolher outra pasta"
+  // fica discreto para ninguem trocar de pasta por engano.
   reusarBtn.textContent = "📁 Usar pasta \"" + handle.name + "\"";
+  reusarBtn.className = "pasta-btn primario";
   reusarBtn.style.display = "inline-block";
   pastaBtn.textContent = "Escolher outra pasta";
+  pastaBtn.className = "pasta-btn secundario";
   pastaBtn.style.display = "inline-block";
   definirStatus("Clique em \"Usar pasta\" para reusar \"" + handle.name +
-    "\" (basta 1 confirmacao).", "aviso");
+    "\" (1 confirmacao). No aviso do Chrome, escolha \"Permitir sempre\" " +
+    "para nao precisar confirmar de novo.", "aviso");
   reusarBtn.onclick = async () => {
     if (await temPermissao(handle, true)) {
       pastaSalvamento = handle;
@@ -1636,6 +1677,59 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("sw.js").catch(() => { /* sem offline: segue normal */ });
   });
 }
+
+// -------------------------------------------------------------------
+//  OFERECER INSTALACAO (a pasta so fica 100% fixa num app instalado)
+//  Regra do Chrome: apps instalados guardam a permissao da pasta
+//  automaticamente; numa aba comum a permissao expira ao reabrir. Por
+//  isso empurramos a instalacao — vira o caminho para a pasta grudada.
+// -------------------------------------------------------------------
+const instalarBtn = document.getElementById("btn-instalar");
+const dicaInstalar = document.getElementById("dica-instalar");
+let promptInstalar = null;   // evento beforeinstallprompt guardado
+
+function estaInstalado() {
+  return window.matchMedia("(display-mode: standalone)").matches ||
+    window.navigator.standalone === true;
+}
+
+// Mostra a dica de texto so quando faz sentido: navegador com salvamento
+// em pasta (FSA), ainda em aba (nao instalado) e sem o botao de instalar.
+function atualizarDicaInstalar() {
+  const mostrar = suportaFSA && !estaInstalado() &&
+    instalarBtn.style.display === "none";
+  dicaInstalar.style.display = mostrar ? "inline" : "none";
+}
+
+// O Chrome dispara isto quando o app pode ser instalado.
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  promptInstalar = e;
+  if (!estaInstalado()) {
+    instalarBtn.className = "pasta-btn primario";
+    instalarBtn.style.display = "inline-block";
+  }
+  atualizarDicaInstalar();
+});
+
+instalarBtn.addEventListener("click", async () => {
+  if (!promptInstalar) return;
+  promptInstalar.prompt();
+  try { await promptInstalar.userChoice; } catch (e) { /* ignora */ }
+  promptInstalar = null;
+  instalarBtn.style.display = "none";
+  atualizarDicaInstalar();
+});
+
+// Instalou com sucesso: some com a oferta e avisa que a pasta agora fica fixa.
+window.addEventListener("appinstalled", () => {
+  promptInstalar = null;
+  instalarBtn.style.display = "none";
+  dicaInstalar.style.display = "none";
+  definirStatus("App instalado. A partir de agora a pasta de salvamento fica fixa.", "ok");
+});
+
+atualizarDicaInstalar();
 </script>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "a1486e0d3d4343f1951e930b4640e897"}'></script><!-- End Cloudflare Web Analytics -->
 </body>

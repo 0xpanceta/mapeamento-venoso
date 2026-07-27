@@ -38,6 +38,7 @@ avançado) que ainda não as tem.
 6. [Mudança 6 — Impressão sem cabeçalho/rodapé do navegador](#mudança-6--impressão-sem-cabeçalhorodapé-do-navegador)
 7. [Mudança 7 — Imprimir a partir da visualização de exames anteriores](#mudança-7--imprimir-a-partir-da-visualização-de-exames-anteriores)
 8. [Mudança 8 — Ver PDF de exames anteriores na galeria](#mudança-8--ver-pdf-de-exames-anteriores-na-galeria)
+9. [Mudança 9 — Pasta de salvamento fixa (instalar como app + reuso em 1 clique)](#mudança-9--pasta-de-salvamento-fixa-instalar-como-app--reuso-em-1-clique)
 
 > **Ordem recomendada de implementação:** 2 → 3 (junto) → 4 → 5. O SVG é o
 > substrato; a legenda é montada nele; a borracha precisa da separação em camadas
@@ -841,6 +842,118 @@ nova precisa dele). Se lá a galeria usar `<img>` para tudo, lembrar que PDF nã
 renderiza em `<img>` — precisa de nova aba, `<iframe>`/`<embed>`, ou um leitor de
 PDF. Se a listagem lá vier de um índice/banco em vez de ler a pasta do disco,
 aplicar o mesmo filtro no ponto equivalente.
+
+---
+
+## Mudança 9 — Pasta de salvamento fixa (instalar como app + reuso em 1 clique)
+
+**O quê:** Fazer a **pasta de salvamento "grudar"** entre as sessões, para a
+médica não precisar reescolher a pasta toda vez que abre o programa numa máquina
+que já usava. Três frentes visíveis para o usuário:
+1. Um botão verde em destaque **"⬇️ Instalar app (deixa a pasta fixa)"** no rodapé,
+   que oferece instalar o programa como aplicativo (PWA). Some depois de instalado,
+   com a mensagem "App instalado. A partir de agora a pasta de salvamento fica fixa."
+2. No reinício, quando o navegador ainda precisa de 1 confirmação para reusar a
+   pasta lembrada, o botão **"Usar pasta X"** vira a ação **primária e destacada**,
+   e o **"Escolher outra pasta"** vira um link discreto — para ninguém trocar de
+   pasta por engano. As mensagens passam a instruir a clicar **"Permitir sempre"**
+   no aviso do Chrome.
+3. Ao trocar de pasta manualmente (quando já havia uma em uso), um aviso de
+   confirmação: *"Você já estava salvando na pasta X. Trocar para Y?"*.
+
+**Por quê:** Toda vez que o app era aberto numa máquina já usada, ele voltava a
+pedir a pasta de salvamento. Como cada pessoa acabava escolhendo uma pasta
+diferente, os documentos ficavam espalhados e perdidos. O handle da pasta **já**
+era persistido no IndexedDB; o problema é a **permissão** do Chrome sobre a pasta,
+que não sobrevive silenciosa entre reaberturas do navegador. Regra do Chrome
+(confirmada na doc oficial, não dá para contornar por código): numa **aba comum** a
+permissão só persiste se o usuário clicar "Permitir sempre"; num **app instalado
+(PWA)** a permissão é mantida **automaticamente**, sem aviso e sem clique. Logo, a
+solução de verdade é empurrar a instalação como app; o resto reduz o atrito e os
+erros de escolha enquanto o usuário ainda estiver em aba.
+
+**Onde:** Arquivo único `index.html`:
+- CSS dos botões: novas classes `.pasta-btn.primario`, `.pasta-btn.secundario` e
+  `.dica-instalar`.
+- HTML do bloco `#status`: novo `<button id="btn-instalar">`, novo
+  `<span id="dica-instalar">` e o já existente `#btn-reusar`/`#btn-pasta`.
+- JS: `pastaAtiva` (reset de classe), `escolherPasta` (confirmação de troca +
+  helper `mesmaEntrada`), `tentarReusarPasta` (hierarquia primário/secundário +
+  texto "Permitir sempre"), fluxo de salvar (mensagem de permissão expirada) e um
+  bloco novo no fim (seção PWA) com `beforeinstallprompt`/`appinstalled`.
+
+**Como:** A persistência do handle e o reuso silencioso **já existiam** — não
+recriar. As adições:
+
+1. Oferta de instalação (a peça central). Guardar o evento `beforeinstallprompt`,
+   mostrar o botão e chamar o prompt no clique:
+   ```js
+   let promptInstalar = null;
+   function estaInstalado() {
+     return window.matchMedia("(display-mode: standalone)").matches ||
+       window.navigator.standalone === true;
+   }
+   window.addEventListener("beforeinstallprompt", (e) => {
+     e.preventDefault(); promptInstalar = e;
+     if (!estaInstalado()) { instalarBtn.className = "pasta-btn primario";
+       instalarBtn.style.display = "inline-block"; }
+   });
+   instalarBtn.addEventListener("click", async () => {
+     if (!promptInstalar) return;
+     promptInstalar.prompt(); try { await promptInstalar.userChoice; } catch (e) {}
+     promptInstalar = null; instalarBtn.style.display = "none";
+   });
+   window.addEventListener("appinstalled", () => {
+     instalarBtn.style.display = "none";
+     definirStatus("App instalado. A partir de agora a pasta de salvamento fica fixa.", "ok");
+   });
+   ```
+   Uma dica de texto (`#dica-instalar`) aparece como reforço só quando há suporte a
+   pasta (FSA), não está instalado e o botão de instalar não está visível.
+
+2. Reuso em 1 clique (dentro de `tentarReusarPasta`, no ramo que precisa de
+   confirmação): o botão de reusar ganha `class="pasta-btn primario"` e o de
+   escolher outra ganha `class="pasta-btn secundario"`; a mensagem instrui a
+   escolher "Permitir sempre". Em `pastaAtiva`, ao ativar uma pasta, resetar
+   `pastaBtn.className = "pasta-btn"`.
+
+3. Confirmar troca de pasta (em `escolherPasta`): guardar a pasta anterior antes
+   do picker e, se a nova for diferente, confirmar:
+   ```js
+   async function mesmaEntrada(a, b) {
+     try { return await a.isSameEntry(b); } catch (e) { return a.name === b.name; }
+   }
+   // ...dentro de escolherPasta, após o showDirectoryPicker:
+   if (anterior && !(await mesmaEntrada(anterior, escolhida))) {
+     if (!confirm("Voce ja estava salvando na pasta \"" + anterior.name +
+       "\".\n\nTrocar para \"" + escolhida.name + "\"?")) {
+       pastaAtiva(anterior.name); return;
+     }
+   }
+   ```
+
+**Como validar:**
+1. Servir por http/https (ex.: `python3 -m http.server`) e abrir no Chrome/Edge.
+2. Em aba: confirmar que o botão verde "Instalar app" aparece. Escolher uma pasta
+   e salvar um exame normalmente.
+3. Instalar pelo botão → o botão some e aparece "App instalado…".
+4. Abrir o **app instalado**, fechá-lo totalmente e reabrir: a pasta deve reativar
+   **sozinha, sem clique**, e o salvamento vai direto para ela (subpastas
+   data > paciente).
+5. Em aba, fechar/reabrir o navegador: o reuso deve ser 1 clique óbvio ("Usar
+   pasta X"), com "Escolher outra pasta" discreto, e a orientação "Permitir sempre".
+6. Com uma pasta ativa, clicar "Trocar pasta" e escolher outra → deve pedir
+   confirmação.
+
+**Observações para o projeto de destino:** A ideia-chave é que **pasta 100% fixa
+sem clique = app instalado (PWA)** — isso depende de o app já ser instalável
+(`manifest.webmanifest` com `display: standalone`, ícone e `start_url`; service
+worker registrado). Se lá a estrutura for diferente (arquivos separados/framework),
+aplicar a mesma intenção: capturar `beforeinstallprompt`, oferecer instalar,
+detectar `display-mode: standalone`. O reuso silencioso e a persistência do handle
+no IndexedDB provavelmente já existem no destino — **não duplicar**, só ajustar a
+hierarquia visual dos botões e as mensagens. O `confirm()` de troca de pasta é
+opcional e pode virar um modal próprio se o destino evitar diálogos nativos.
 
 ---
 
