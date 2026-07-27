@@ -184,12 +184,30 @@
     border: 1px solid var(--cinza-borda); border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.12);
   }
   .galeria-visu .legenda { margin-top: 12px; font-size: 14px; color: #5a6a60; }
+  /* Botao "Imprimir" dentro do visualizador de exame anterior */
+  .galeria-visu .visu-acoes { margin-top: 14px; display: flex; justify-content: center; gap: 10px; }
+  /* Celula de PDF na grade: sem miniatura, mostra um cartao com o rotulo "PDF" */
+  .galeria-cel .moldura .pdf-icone {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font-size: 13px; color: #b03a3a; font-weight: 600;
+  }
+  .galeria-cel .moldura .pdf-icone .selo {
+    font-size: 22px; letter-spacing: 1px; border: 2px solid #b03a3a;
+    border-radius: 8px; padding: 6px 12px; background: #fbeeee;
+  }
+  /* Area dedicada a impressao do exame anterior (escondida na tela) */
+  #area-impressao { display: none; }
   @media print {
+    @page { margin: 0; }
     header, .ferramentas, .status, .cartao-salvo, .galeria, #btn-concluir-curva { display: none !important; }
     body { height: auto; display: block; }
     .corpo { display: block; }
-    .canvas-area { display: block; text-align: center; padding: 0; background: white; overflow: visible; }
+    .canvas-area { display: block; text-align: center; padding: 6mm; background: white; overflow: visible; }
     canvas { box-shadow: none; max-width: 100%; max-height: none; }
+    /* Ao imprimir um exame anterior da galeria: esconde o editor e mostra so a imagem */
+    body.imprimindo-galeria .corpo { display: none !important; }
+    body.imprimindo-galeria #area-impressao { display: block !important; text-align: center; }
+    body.imprimindo-galeria #area-impressao img { max-width: 100%; max-height: 100vh; }
   }
   /* Bloqueio em telas pequenas / celular */
   #bloqueio-mobile {
@@ -410,6 +428,9 @@
   </div>
   <div class="galeria-conteudo" id="galeria-conteudo"></div>
 </div>
+
+<!-- Area usada so na impressao de um exame anterior (imagem em tela cheia, sem margens). Escondida na tela. -->
+<div id="area-impressao"></div>
 
 <script>
 // ===================================================================
@@ -1048,6 +1069,11 @@ window.addEventListener("beforeprint", () => {
   canvas.style.maxWidth = ""; canvas.style.maxHeight = "";
 });
 window.addEventListener("afterprint", aplicarZoom);
+// Depois de imprimir um exame anterior da galeria, desliga o modo e limpa a area.
+window.addEventListener("afterprint", () => {
+  document.body.classList.remove("imprimindo-galeria");
+  document.getElementById("area-impressao").replaceChildren();
+});
 
 // ===================================================================
 //  DESFAZER / LIMPAR
@@ -1240,8 +1266,10 @@ document.getElementById("btn-salvar").addEventListener("click", salvar);
 //  uma vez, reunindo as imagens de todos os dias. A forma de SALVAR
 //  nao muda — isso mantem a compatibilidade com os arquivos ja existentes.
 //
-//  So imagens PNG entram. PDFs ficam de fora: o "Imprimir / PDF" usa a
-//  impressao do navegador e o app nao sabe onde o PDF foi parar.
+//  Entram imagens PNG (salvas pelo app) e tambem PDFs que a medica tenha
+//  guardado na pasta da paciente (o "Imprimir / PDF" usa a impressao do
+//  navegador; se ela salvar o PDF na pasta, ele aparece aqui). PNG abre no
+//  visualizador embutido; PDF abre em nova aba (visualizador do navegador).
 // ===================================================================
 const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
                   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -1256,6 +1284,7 @@ function analisarPastaData(nome) {
   return { chaveMes: m[1] + "-" + m[2], rotuloMes: MESES_PT[mes-1] + " de " + ano, dataStr: nome };
 }
 function ehPNG(nome) { return /\.png$/i.test(nome); }
+function ehPDF(nome) { return /\.pdf$/i.test(nome); }
 function chaveMesDeData(dataStr) { return dataStr.slice(0, 7); }   // "AAAA-MM-DD" -> "AAAA-MM"
 
 const galeria = document.getElementById("galeria");
@@ -1298,13 +1327,16 @@ async function montarIndiceGaleria(raiz) {
   return meses;
 }
 
-// Le as imagens PNG de uma paciente, juntando todos os dias dela no mes.
+// Le os exames de uma paciente (PNG e PDF), juntando todos os dias dela no mes.
+// Cada item ganha "tipo" ("png" ou "pdf") para a UI saber como exibir/abrir.
 async function listarImagensPaciente(pac) {
   const imgs = [];
   for (const d of pac.dirs) {
     try {
       for await (const [nomeArq, hArq] of d.handle.entries()) {
-        if (hArq.kind === "file" && ehPNG(nomeArq)) imgs.push({ handle: hArq, arquivo: nomeArq, dataStr: d.dataStr });
+        if (hArq.kind !== "file") continue;
+        if (ehPNG(nomeArq))      imgs.push({ handle: hArq, arquivo: nomeArq, dataStr: d.dataStr, tipo: "png" });
+        else if (ehPDF(nomeArq)) imgs.push({ handle: hArq, arquivo: nomeArq, dataStr: d.dataStr, tipo: "pdf" });
       }
     } catch (e) { /* sem permissao nessa subpasta: ignora */ }
   }
@@ -1388,24 +1420,34 @@ async function renderImagens(chMes, nome) {
   let imgs;
   try { imgs = await listarImagensPaciente(pac); }
   catch (e) { galeriaMensagem("Nao foi possivel ler as imagens desta paciente (permissao negada)."); return; }
-  if (imgs.length === 0) { galeriaMensagem("Esta paciente nao tem imagens PNG salvas nesta pasta."); return; }
+  if (imgs.length === 0) { galeriaMensagem("Esta paciente nao tem exames (PNG ou PDF) salvos nesta pasta."); return; }
 
   const grade = document.createElement("div"); grade.className = "galeria-grade";
   imgs.forEach((img, i) => {
     const cel = document.createElement("div"); cel.className = "galeria-cel";
     const mold = document.createElement("div"); mold.className = "moldura"; mold.dataset.i = i;
-    const car = document.createElement("span"); car.className = "carregando"; car.textContent = "…";
-    mold.appendChild(car);
+    if (img.tipo === "pdf") {
+      // PDF nao carrega em <img>: mostra um cartao "PDF" e abre em nova aba ao clicar.
+      const ic = document.createElement("span"); ic.className = "pdf-icone";
+      const selo = document.createElement("span"); selo.className = "selo"; selo.textContent = "PDF";
+      const txt = document.createElement("span"); txt.textContent = "abrir em nova aba";
+      ic.append(selo, txt);
+      mold.appendChild(ic);
+    } else {
+      const car = document.createElement("span"); car.className = "carregando"; car.textContent = "…";
+      mold.appendChild(car);
+    }
     const leg = document.createElement("div"); leg.className = "legenda";
     const dia = document.createElement("span"); dia.className = "dia"; dia.textContent = img.dataStr;
     leg.append(dia, document.createElement("br"), document.createTextNode(img.arquivo));
     cel.append(mold, leg);
-    cel.addEventListener("click", () => renderVisualizador(img, chMes, nome));
+    cel.addEventListener("click", () => img.tipo === "pdf" ? abrirPDFNovaAba(img) : renderVisualizador(img, chMes, nome));
     grade.appendChild(cel);
   });
   galeriaConteudo.replaceChildren(grade);
 
-  // Carga preguicosa: so busca o arquivo da miniatura quando ela chega perto da tela.
+  // Carga preguicosa: so busca o arquivo da miniatura quando ela chega perto da
+  // tela. So vale para PNG; celulas de PDF nao tem miniatura para observar.
   galeriaObserver = new IntersectionObserver((entradas, obs) => {
     for (const en of entradas) {
       if (!en.isIntersecting) continue;
@@ -1413,7 +1455,20 @@ async function renderImagens(chMes, nome) {
       carregarMiniatura(en.target, imgs[+en.target.dataset.i]);
     }
   }, { root: galeriaConteudo, rootMargin: "300px" });
-  grade.querySelectorAll(".moldura").forEach(el => galeriaObserver.observe(el));
+  grade.querySelectorAll(".moldura").forEach(el => { if (imgs[+el.dataset.i].tipo !== "pdf") galeriaObserver.observe(el); });
+}
+
+// Abre um PDF de exame anterior em nova aba (visualizador nativo do navegador,
+// que tem seu proprio botao de imprimir). O object URL NAO entra em galeriaURLs
+// porque ele nao pode ser revogado enquanto a aba estiver aberta.
+async function abrirPDFNovaAba(img) {
+  try {
+    const file = await img.handle.getFile();
+    const url = URL.createObjectURL(file);
+    window.open(url, "_blank");
+  } catch (e) {
+    definirStatus("Nao foi possivel abrir este PDF.", "aviso");
+  }
 }
 
 async function carregarMiniatura(mold, img) {
@@ -1448,11 +1503,31 @@ async function renderVisualizador(img, chMes, nome) {
       const visu = document.createElement("div"); visu.className = "galeria-visu";
       const leg = document.createElement("div"); leg.className = "legenda";
       leg.textContent = nome + " — " + img.dataStr + " — " + img.arquivo;
-      visu.append(im, leg);
+      const acoes = document.createElement("div"); acoes.className = "visu-acoes";
+      const btnImp = document.createElement("button");
+      btnImp.className = "acao-btn acao-secundaria";
+      btnImp.innerHTML = "&#128424; Imprimir";
+      btnImp.addEventListener("click", () => imprimirDaGaleria(file));
+      acoes.appendChild(btnImp);
+      visu.append(im, leg, acoes);
       galeriaConteudo.replaceChildren(visu);
     };
     im.src = novoObjectURL(file);
   } catch (e) { galeriaMensagem("Nao foi possivel abrir este arquivo."); }
+}
+
+// Imprime SO a imagem do exame anterior, em tela cheia e sem margens. Coloca a
+// imagem numa area dedicada (#area-impressao) e liga o modo "imprimindo-galeria",
+// que o CSS de impressao usa para esconder o editor e mostrar apenas a imagem.
+function imprimirDaGaleria(file) {
+  const area = document.getElementById("area-impressao");
+  const im = new Image();
+  im.onload = () => {
+    area.replaceChildren(im);
+    document.body.classList.add("imprimindo-galeria");
+    window.print();
+  };
+  im.src = novoObjectURL(file);   // reutiliza o file ja obtido no visualizador
 }
 
 // --- Abrir / fechar ---------------------------------------------------

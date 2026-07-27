@@ -12,6 +12,9 @@ DesenhosLaudo/
 *.png
 !Modelo.png
 
+# Config local do Claude Code (específico da máquina, não versionar)
+.claude/settings.local.json
+
 # Arquivos temporários e de sistema
 *.tmp
 .escrita_teste_*

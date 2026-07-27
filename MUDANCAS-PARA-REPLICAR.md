@@ -35,6 +35,9 @@ avançado) que ainda não as tem.
 3. [Mudança 3 — Perfurante trombosado (preto) na legenda](#mudança-3--perfurante-trombosado-preto-na-legenda)
 4. [Mudança 4 — Borracha não apaga o desenho base (camadas)](#mudança-4--borracha-não-apaga-o-desenho-base-camadas)
 5. [Mudança 5 — Nome da paciente no modelo + capitalização](#mudança-5--nome-da-paciente-no-modelo--capitalização)
+6. [Mudança 6 — Impressão sem cabeçalho/rodapé do navegador](#mudança-6--impressão-sem-cabeçalhorodapé-do-navegador)
+7. [Mudança 7 — Imprimir a partir da visualização de exames anteriores](#mudança-7--imprimir-a-partir-da-visualização-de-exames-anteriores)
+8. [Mudança 8 — Ver PDF de exames anteriores na galeria](#mudança-8--ver-pdf-de-exames-anteriores-na-galeria)
 
 > **Ordem recomendada de implementação:** 2 → 3 (junto) → 4 → 5. O SVG é o
 > substrato; a legenda é montada nele; a borracha precisa da separação em camadas
@@ -641,6 +644,203 @@ a borracha não apaga o nome. (Validado.)
 - Se lá o nome vier de outro campo/estado, trocar a fonte do texto.
 - Se lá o salvamento montar nome de arquivo/pasta em outro ponto, aplicar
   `titulizarNome` no mesmo lugar em que hoje se sanitiza o nome.
+
+---
+
+## Mudança 6 — Impressão sem cabeçalho/rodapé do navegador
+
+**O quê:** Ao imprimir (ou "Salvar como PDF") pela caixa de impressão do
+navegador, deixavam de aparecer o **nome do arquivo/título no topo** e a **URL do
+site no rodapé** da página. Agora sai só o desenho, limpo.
+
+**Por quê:** A médica reclamou que a folha impressa vinha com o endereço do site
+embaixo e o nome do arquivo em cima — poluição visual num documento clínico. Isso
+não era código nosso: eram os **cabeçalhos/rodapés automáticos do navegador**, que
+o Chromium injeta quando a página tem margens de impressão não-nulas.
+
+**Onde:** `index.html`, bloco `@media print` do CSS (a única regra de impressão do
+app, que já escondia a interface e centralizava o `<canvas>`).
+
+**Como:** Adicionada a regra `@page { margin: 0; }` dentro do `@media print`. Em
+navegadores Chromium, margem de página zero **suprime os cabeçalhos/rodapés
+padrão**. Como margem 0 encostaria o conteúdo na borda do papel, o respiro foi
+recolocado no próprio conteúdo, trocando `padding: 0` por `padding: 6mm` na
+`.canvas-area` dentro do `@media print`:
+```css
+@media print {
+  @page { margin: 0; }                 /* remove cabeçalho (nome do arquivo) e rodapé (URL) */
+  /* ...regras existentes que escondem header/ferramentas/status/galeria... */
+  .canvas-area { display: block; text-align: center; padding: 6mm; background: white; overflow: visible; }
+  canvas { box-shadow: none; max-width: 100%; max-height: none; }
+}
+```
+
+**Como validar:** Desenhar algo, clicar em "Imprimir / PDF" e, na
+pré-visualização do navegador, confirmar que **não** aparecem nome do arquivo no
+topo nem URL no rodapé, e que o desenho não fica colado na borda do papel.
+
+**Observações para o projeto de destino:** Se lá houver mais de um bloco
+`@media print` ou um CSS externo, colocar o `@page { margin: 0 }` em qualquer
+regra de impressão global vale para todas as impressões. O `@page` é regra de
+topo — não precisa estar aninhada, mas pôr junto do `@media print` mantém tudo no
+mesmo lugar. Vale só para navegadores Chromium (o app já é restrito a Chrome/Edge).
+
+---
+
+## Mudança 7 — Imprimir a partir da visualização de exames anteriores
+
+**O quê:** Na tela "Ver exames anteriores" (galeria), ao abrir uma imagem em
+tamanho grande, passou a existir um botão **"🖨️ Imprimir"** que imprime **apenas
+aquele exame antigo**, em tela cheia e sem cabeçalho/rodapé.
+
+**Por quê:** A galeria era só-leitura: o único jeito de imprimir um exame antigo
+era abrir o arquivo por fora. Pior: se a médica desse Ctrl+P com a galeria aberta,
+o CSS de impressão escondia a galeria e imprimia o **canvas de edição atual** (o
+desenho novo), não o exame que ela estava vendo. Faltava um caminho direto para
+reimprimir um exame anterior.
+
+**Onde:** `index.html` — CSS (`@media print`), um contêiner novo no HTML
+(`#area-impressao`), e o JS da galeria (`renderVisualizador`, mais uma função nova
+`imprimirDaGaleria` e o `afterprint`).
+
+**Como:** A dificuldade é que a mesma impressão do navegador serve para dois
+conteúdos diferentes (o canvas de edição e a imagem da galeria). A solução usa uma
+**área de impressão dedicada** e uma **classe no `<body>`** para alternar o modo:
+
+1. HTML — um contêiner escondido na tela, logo após o modal da galeria:
+   ```html
+   <div id="area-impressao"></div>
+   ```
+   e no CSS base (fora do `@media print`): `#area-impressao { display: none; }`.
+
+2. CSS de impressão — quando o `<body>` tem a classe `imprimindo-galeria`, esconde
+   o editor (`.corpo`) e mostra só a imagem da área de impressão:
+   ```css
+   @media print {
+     /* ...regras existentes... */
+     body.imprimindo-galeria .corpo { display: none !important; }   /* esconde o canvas de edição */
+     body.imprimindo-galeria #area-impressao { display: block !important; text-align: center; }
+     body.imprimindo-galeria #area-impressao img { max-width: 100%; max-height: 100vh; }
+   }
+   ```
+   (A `.galeria` já era escondida na impressão pela regra existente.)
+
+3. JS — no `renderVisualizador`, dentro do `im.onload`, um botão que chama:
+   ```js
+   function imprimirDaGaleria(file) {
+     const area = document.getElementById("area-impressao");
+     const im = new Image();
+     im.onload = () => {
+       area.replaceChildren(im);
+       document.body.classList.add("imprimindo-galeria");
+       window.print();
+     };
+     im.src = novoObjectURL(file);   // reusa o File já obtido no visualizador
+   }
+   ```
+   E um `afterprint` que desliga o modo e limpa a área (some com a imagem depois de
+   imprimir, para não sobrar no DOM):
+   ```js
+   window.addEventListener("afterprint", () => {
+     document.body.classList.remove("imprimindo-galeria");
+     document.getElementById("area-impressao").replaceChildren();
+   });
+   ```
+   O botão reaproveita as classes `.acao-btn .acao-secundaria` (as mesmas do botão
+   "Imprimir / PDF") para ficar visualmente consistente.
+
+**Como validar:** "Ver exames anteriores" → navegar Mês → Paciente → clicar numa
+imagem → clicar "Imprimir". Na pré-visualização deve aparecer **só a imagem** do
+exame antigo, em tela cheia, sem o editor e sem cabeçalho/rodapé. Depois de
+fechar, a tela do app deve voltar ao normal (a classe `imprimindo-galeria` sai).
+
+**Observações para o projeto de destino:** O padrão "área de impressão dedicada +
+classe no body para alternar o que é impresso" é portável para qualquer estrutura
+(inclusive framework). Se lá a visualização do exame não for um `<img>` mas outro
+componente, o essencial é: colocar o que se quer imprimir num nó próprio, marcar um
+modo de impressão e, no `@media print`, esconder todo o resto e mostrar só esse nó.
+Depende da Mudança 6 (`@page { margin: 0 }`) para sair sem cabeçalho/rodapé.
+
+---
+
+## Mudança 8 — Ver PDF de exames anteriores na galeria
+
+**O quê:** A galeria de exames anteriores, que só listava imagens `.png`, passou a
+listar também arquivos **`.pdf`** guardados na pasta da paciente. Cada PDF aparece
+como um cartão com o selo "PDF" e, ao ser clicado, **abre em nova aba** no
+visualizador de PDF do próprio navegador (que já tem seu botão de imprimir).
+
+**Por quê:** A médica pediu para "ver o PDF de exames anteriores, não só a
+imagem". O app salva automaticamente só PNG; o PDF só existe quando ela usa
+"Imprimir / PDF" → "Salvar como PDF" e guarda o arquivo na pasta da paciente.
+Esses PDFs eram ignorados pela galeria. Optou-se por **abrir em nova aba** (em vez
+de embutir) porque o visualizador nativo do navegador já lida bem com PDF e evita
+carregar um leitor de PDF dentro do app.
+
+**Onde:** `index.html`, seção da galeria no `<script>`: função `ehPDF` (nova, ao
+lado de `ehPNG`), `listarImagensPaciente`, `renderImagens`, função nova
+`abrirPDFNovaAba`, e CSS do cartão de PDF. Também um comentário de cabeçalho da
+seção que dizia "PDFs ficam de fora" foi atualizado.
+
+**Como:**
+
+1. Reconhecer PDF — ao lado de `ehPNG`:
+   ```js
+   function ehPDF(nome) { return /\.pdf$/i.test(nome); }
+   ```
+
+2. Listar PDF junto com PNG, marcando o tipo de cada item (para a UI saber como
+   exibir/abrir) — em `listarImagensPaciente`:
+   ```js
+   if (hArq.kind !== "file") continue;
+   if (ehPNG(nomeArq))      imgs.push({ handle: hArq, arquivo: nomeArq, dataStr: d.dataStr, tipo: "png" });
+   else if (ehPDF(nomeArq)) imgs.push({ handle: hArq, arquivo: nomeArq, dataStr: d.dataStr, tipo: "pdf" });
+   ```
+
+3. Na grade (`renderImagens`): PDF **não** carrega em `<img>`, então a célula
+   mostra um cartão com o selo "PDF" (sem miniatura preguiçosa) e o clique abre em
+   nova aba:
+   ```js
+   if (img.tipo === "pdf") {
+     const ic = document.createElement("span"); ic.className = "pdf-icone";
+     const selo = document.createElement("span"); selo.className = "selo"; selo.textContent = "PDF";
+     const txt = document.createElement("span"); txt.textContent = "abrir em nova aba";
+     ic.append(selo, txt); mold.appendChild(ic);
+   } else { /* ...miniatura normal com "carregando"... */ }
+   // ...
+   cel.addEventListener("click", () => img.tipo === "pdf" ? abrirPDFNovaAba(img) : renderVisualizador(img, chMes, nome));
+   // E o IntersectionObserver só observa células que NÃO são PDF:
+   grade.querySelectorAll(".moldura").forEach(el => { if (imgs[+el.dataset.i].tipo !== "pdf") galeriaObserver.observe(el); });
+   ```
+
+4. Abrir em nova aba — object URL **não** entra em `galeriaURLs` (a lista que é
+   revogada ao fechar a galeria), porque a URL não pode ser revogada enquanto a aba
+   estiver aberta:
+   ```js
+   async function abrirPDFNovaAba(img) {
+     try {
+       const file = await img.handle.getFile();
+       const url = URL.createObjectURL(file);   // NÃO usar novoObjectURL: não revogar enquanto a aba viver
+       window.open(url, "_blank");
+     } catch (e) { definirStatus("Nao foi possivel abrir este PDF.", "aviso"); }
+   }
+   ```
+
+5. A mensagem de "nenhuma imagem PNG" virou "nenhum exame (PNG ou PDF)".
+
+**Como validar:** Colocar um PDF de teste dentro de uma pasta de paciente
+(`AAAA-MM-DD/Nome da paciente/arquivo.pdf`). Abrir "Ver exames anteriores" → Mês →
+Paciente: o PDF deve aparecer como cartão "PDF" ao lado das imagens. Clicar deve
+abrir o PDF em nova aba. As imagens PNG continuam abrindo no visualizador embutido
+normalmente.
+
+**Observações para o projeto de destino:** A chave é (a) incluir a extensão `.pdf`
+no filtro de listagem e carimbar um `tipo` em cada item; (b) ramificar exibição e
+clique por `tipo`; (c) **não** revogar o object URL do PDF imediatamente (a aba
+nova precisa dele). Se lá a galeria usar `<img>` para tudo, lembrar que PDF não
+renderiza em `<img>` — precisa de nova aba, `<iframe>`/`<embed>`, ou um leitor de
+PDF. Se a listagem lá vier de um índice/banco em vez de ler a pasta do disco,
+aplicar o mesmo filtro no ponto equivalente.
 
 ---
 
