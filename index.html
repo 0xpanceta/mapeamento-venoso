@@ -213,15 +213,16 @@
   /* Area dedicada a impressao do exame anterior (escondida na tela) */
   #area-impressao { display: none; }
   @media print {
-    @page { margin: 0; }
+    @page { margin: 0; size: A4 portrait; }
     header, .ferramentas, .status, .cartao-salvo, .galeria, #btn-concluir-curva { display: none !important; }
     body { height: auto; display: block; }
     .corpo { display: block; }
-    .canvas-area { display: block; text-align: center; padding: 6mm; background: white; overflow: visible; }
-    canvas { box-shadow: none; max-width: 100%; max-height: none; }
+    /* Uma pagina so: altura limitada a uma folha e sem transbordo */
+    .canvas-area { display: block; text-align: center; padding: 0; background: white; height: 100vh; overflow: hidden; box-sizing: border-box; }
+    canvas { box-shadow: none; max-width: 100%; max-height: 100vh; }
     /* Ao imprimir um exame anterior da galeria: esconde o editor e mostra so a imagem */
     body.imprimindo-galeria .corpo { display: none !important; }
-    body.imprimindo-galeria #area-impressao { display: block !important; text-align: center; }
+    body.imprimindo-galeria #area-impressao { display: block !important; text-align: center; height: 100vh; overflow: hidden; }
     body.imprimindo-galeria #area-impressao img { max-width: 100%; max-height: 100vh; }
   }
   /* Bloqueio em telas pequenas / celular */

@@ -39,6 +39,7 @@ avançado) que ainda não as tem.
 7. [Mudança 7 — Imprimir a partir da visualização de exames anteriores](#mudança-7--imprimir-a-partir-da-visualização-de-exames-anteriores)
 8. [Mudança 8 — Ver PDF de exames anteriores na galeria](#mudança-8--ver-pdf-de-exames-anteriores-na-galeria)
 9. [Mudança 9 — Pasta de salvamento fixa (instalar como app + reuso em 1 clique)](#mudança-9--pasta-de-salvamento-fixa-instalar-como-app--reuso-em-1-clique)
+10. [Mudança 10 — Impressão sempre em 1 página só (sem transbordo)](#mudança-10--impressão-sempre-em-1-página-só-sem-transbordo)
 
 > **Ordem recomendada de implementação:** 2 → 3 (junto) → 4 → 5. O SVG é o
 > substrato; a legenda é montada nele; a borracha precisa da separação em camadas
@@ -954,6 +955,81 @@ detectar `display-mode: standalone`. O reuso silencioso e a persistência do han
 no IndexedDB provavelmente já existem no destino — **não duplicar**, só ajustar a
 hierarquia visual dos botões e as mensagens. O `confirm()` de troca de pasta é
 opcional e pode virar um modal próprio se o destino evitar diálogos nativos.
+
+---
+
+## Mudança 10 — Impressão sempre em 1 página só (sem transbordo)
+
+**O quê:** Ao imprimir (ou "Salvar como PDF"), o resultado passa a caber
+**sempre em uma única folha**. Antes, dependendo do tamanho do papel, o desenho
+podia "vazar" e gerar uma 2ª página (muitas vezes quase em branco). Também se
+definiu o papel como **A4 retrato** no CSS e as margens continuam **zeradas**.
+
+**Por quê:** A médica pediu que o botão de imprimir já saísse com "só a primeira
+página se tiver mais de uma" e "sem margens". A causa do transbordo era o canvas
+com `max-height: none` dentro do `@media print` (Mudança 6): quando escalado pela
+largura, ele podia exceder a altura da folha e empurrar conteúdo para uma segunda
+página. O `padding: 6mm` da `.canvas-area` ainda somava altura e agravava isso.
+
+> **Nota importante (limitação real):** o **tipo de papel "Espesso 1"** que a
+> médica também pediu **não pode** ser definido por código — tipo de papel/mídia,
+> impressora, frente-e-verso etc. são configurações do **driver no diálogo do
+> sistema**. Nenhuma API web (`window.print()` ou CSS) consegue pré-selecionar
+> isso. Solução prática: o **Chrome memoriza** a última configuração por
+> impressora — a médica seleciona "Espesso 1" **uma vez** (em "Mais
+> configurações" → "Tipo de papel") e ele mantém nas próximas. Portanto, esta
+> mudança cobre por código apenas o "1 página + sem margens"; o papel é um passo
+> manual único do usuário.
+
+**Onde:** `index.html`, bloco `@media print` do CSS (o mesmo da Mudança 6/7).
+
+**Como:** Três ajustes no `@media print`:
+
+1. Definir tamanho/orientação de página (layout previsível):
+   ```css
+   @page { margin: 0; size: A4 portrait; }   /* antes: só margin: 0 */
+   ```
+2. Impedir o transbordo no modo normal (a causa da 2ª página): a `.canvas-area`
+   passa a ter **altura de exatamente uma folha** e a **cortar o excedente**, sem
+   o padding que somava altura; e o canvas é limitado à altura da página:
+   ```css
+   .canvas-area { display: block; text-align: center; padding: 0; background: white;
+                  height: 100vh; overflow: hidden; box-sizing: border-box; }
+   canvas { box-shadow: none; max-width: 100%; max-height: 100vh; }  /* era max-height: none */
+   ```
+3. Mesma garantia no modo galeria (imprimir exame anterior — Mudança 7):
+   ```css
+   body.imprimindo-galeria #area-impressao { display: block !important; text-align: center;
+                                             height: 100vh; overflow: hidden; }
+   ```
+   (O `img` já tinha `max-height: 100vh`.)
+
+A troca de `padding: 6mm` por `padding: 0` alinha com o pedido de "sem margens";
+se o traço encostar demais na borda, dá para reintroduzir uma folga pequena
+(ex.: `padding: 3mm`) sem reabrir o transbordo, já que a altura fica presa a
+`100vh` com `box-sizing: border-box`.
+
+**Como validar:**
+1. Desenhar um traço sobre o modelo e clicar em "🖨 Imprimir / PDF".
+2. Na pré-visualização do navegador: deve mostrar **1 página só**, **sem
+   margens**, com o desenho inteiro visível (sem corte indevido).
+3. Repetir imprimindo um exame anterior pela galeria ("🖨 Imprimir"): também
+   **1 página**.
+4. Conferir que, ao fechar, a tela do app volta ao normal (o `afterprint`/zoom
+   continua funcionando).
+5. Papel "Espesso 1": em "Mais configurações" do diálogo, selecionar o tipo de
+   papel uma vez e confirmar que o Chrome o mantém na próxima impressão.
+
+**Observações para o projeto de destino:** A intenção é "nunca exceder a altura
+de uma folha na impressão". O jeito portável é **limitar a altura do conteúdo de
+impressão a uma página** (`height: 100vh` + `overflow: hidden` no contêiner e
+`max-height: 100vh` no elemento gráfico) em vez de tentar paginar. `@page { size:
+A4 portrait }` fixa o formato — ajuste se lá o padrão for outro (Carta, paisagem).
+**Não** tente definir tipo de papel/impressora por código: não é possível na web;
+oriente o usuário a configurar uma vez (o Chrome memoriza por impressora). Se o
+destino tiver múltiplos blocos de conteúdo que legitimamente ocupem várias
+páginas, essa regra de "1 página" só deve valer para a superfície de impressão do
+mapeamento, não para relatórios longos.
 
 ---
 
